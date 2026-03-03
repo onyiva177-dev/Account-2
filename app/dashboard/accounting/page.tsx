@@ -29,32 +29,37 @@ export default function AccountingPage() {
     ]
   })
 
-  useEffect(() => {
-    if (!organization) return
-    loadData()
-  }, [organization, tab])
+useEffect(() => {
+  if (!organization) return
+  loadAccounts()
+  loadData()
+}, [organization, tab])
 
-  const loadData = async () => {
-    setLoading(true)
-    if (tab === 0) {
-      const { data } = await supabase
-        .from('journal_entries')
-        .select('*, journal_lines(*, account:accounts(code, name))')
-        .eq('organization_id', organization!.id)
-        .order('date', { ascending: false })
-        .limit(50)
-      setEntries(data || [])
-    } else {
-      const { data } = await supabase
-        .from('accounts')
-        .select('*, account_type:account_types(category, normal_balance)')
-        .eq('organization_id', organization!.id)
-        .eq('is_active', true)
-        .order('code')
-      setAccounts(data || [])
-    }
-    setLoading(false)
+const loadAccounts = async () => {
+  const { data } = await supabase
+    .from('accounts')
+    .select('*, account_type:account_types(category, normal_balance)')
+    .eq('organization_id', organization!.id)
+    .eq('is_active', true)
+    .order('code')
+  setAccounts(data || [])
+}
+
+const loadData = async () => {
+  setLoading(true)
+  if (tab === 0) {
+    const { data } = await supabase
+      .from('journal_entries')
+      .select('*, journal_lines(*, account:accounts(code, name))')
+      .eq('organization_id', organization!.id)
+      .order('date', { ascending: false })
+      .limit(50)
+    setEntries(data || [])
+  } else {
+    await loadAccounts()
   }
+  setLoading(false)
+}
 
   const addLine = () => setNewEntry(p => ({
     ...p,
