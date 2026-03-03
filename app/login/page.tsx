@@ -39,38 +39,77 @@ export default function LoginPage() {
   }
 
   const handleSignUp = async () => {
-    if (!form.email || !form.password || !form.full_name || !form.org_name) return toast.error('Fill in all fields')
-    setLoading(true)
-    const { data, error } = await supabase.auth.signUp({ email: form.email, password: form.password })
-    if (error) { toast.error(error.message); setLoading(false); return }
+  if (!form.email || !form.password || !form.full_name || !form.org_name) return toast.error('Fill in all fields')
+  setLoading(true)
 
-    if (data.user) {
-      // Create organization
-      const { data: org, error: orgError } = await supabase
-        .from('organizations')
-        .insert({ name: form.org_name, sector: form.sector, country: 'KE', base_currency: 'KES' })
-        .select().single()
-      
-      if (!orgError && org) {
-        // Create profile
-        await supabase.from('profiles').insert({
-          id: data.user.id,
-          organization_id: org.id,
-          full_name: form.full_name,
-          email: form.email,
-          role: 'super_admin'
-        })
-        // Seed CoA and modules
-        await supabase.rpc('seed_default_coa', { org_id: org.id })
-        await supabase.rpc('seed_default_modules', { org_id: org.id })
+  const { data, error } = await supabase.auth.signUp({ 
+    email: form.email, 
+    password: form.password,
+    options: {
+      data: {
+        full_name: form.full_name,
+        org_name: form.org_name,
+        sector: form.sector,
       }
-      
-      toast.success('Account created! Please check your email to verify.')
+    }
+  })
+
+  if (error) { toast.error(error.message); setLoading(false); return }
+
+  if (data.user) {
+    // Use service role bypass by calling an RPC that runs as SECURITY DEFINER
+    const { data: org, error: orgError } = await supabase
+      .from('organizations')
+      .insert({ 
+        name: form.org_name, 
+        sector: form.sector, 
+        country: 'KE', 
+        base_currency: 'KES' 
+      })
+      .select()
+      .single()
+
+    if (orgError) {
+      console.error('Org error:', orgError)
+      toast.error('Account created but setup incomplete. Contact support.')
+      setLoading(false)
+      return
+    }
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert({
+        id: data.user.id,
+        organization_id: org.id,
+        full_name: form.full_name,
+        email: form.email,
+        role: 'super_admin'
+      })
+
+    if (profileError) {
+      console.error('Profile error:', profileError)
+    }
+
+    await supabase.rpc('seed_default_coa', { org_id: org.id })
+    await supabase.rpc('seed_default_modules', { org_id: org.id })
+
+    toast.success('Account created! Signing you in...')
+    
+    // Auto sign in immediately after signup
+    const { error: signInError } = await supabase.auth.signInWithPassword({ 
+      email: form.email, 
+      password: form.password 
+    })
+    
+    if (!signInError) {
+      router.push('/dashboard')
+    } else {
+      toast.success('Please check your email to verify, then sign in.')
       setMode('signin')
     }
-    setLoading(false)
   }
-
+  setLoading(false)
+}
   const handleReset = async () => {
     if (!form.email) return toast.error('Enter your email')
     setLoading(true)
