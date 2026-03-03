@@ -24,14 +24,19 @@ export default function SettingsPage() {
   const { organization, profile } = useAppStore()
   const [tab, setTab] = useState(0)
   const [enabledModules, setEnabledModules] = useState(['accounting', 'tax', 'payroll', 'inventory', 'banking', 'analytics', 'reports'])
-  const [orgForm, setOrgForm] = useState({
+  const [orgForm, setOrgForm] = useState<{
+    name: string
+    sector: Sector
+    country: string
+    base_currency: string
+    tax_id: string
+  }>({
     name: organization?.name || '',
-    sector: organization?.sector || 'business',
+    sector: (organization?.sector || 'business') as Sector,
     country: organization?.country || 'KE',
     base_currency: organization?.base_currency || 'KES',
     tax_id: organization?.tax_id || '',
   })
-
   const toggleModule = (key: string) => {
     if (key === 'accounting') return // required
     setEnabledModules(prev => prev.includes(key) ? prev.filter(m => m !== key) : [...prev, key])
