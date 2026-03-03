@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useAppStore } from '@/lib/store'
 import { SECTORS, CURRENCIES } from '@/lib/utils'
+import type { Sector } from '@/types'
 import { Settings, Building2, Shield, Bell, Database, CreditCard, Globe, Zap, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -80,7 +81,7 @@ export default function SettingsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="input-label">Sector</label>
-                <select className="input" value={orgForm.sector} onChange={e => setOrgForm(p => ({ ...p, sector: e.target.value }))}>
+                <select className="input" value={orgForm.sector} onChange={e => setOrgForm(p => ({ ...p, sector: e.target.value as Sector }))}>
                   {SECTORS.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
                 </select>
               </div>
