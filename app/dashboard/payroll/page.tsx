@@ -123,11 +123,9 @@ export default function PayrollPage() {
           <h1 className="text-xl font-bold text-slate-900">Payroll</h1>
           <p className="text-sm text-slate-500 mt-0.5">Kenya PAYE, NHIF & NSSF auto-calculated</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={runPayroll} disabled={running || employees.length === 0} className="btn-primary">
-            <Play size={15} />{running ? 'Running...' : 'Run Payroll'}
-          </button>
-        </div>
+        <button onClick={runPayroll} disabled={running || employees.length === 0} className="btn-primary">
+          <Play size={15} />{running ? 'Running...' : 'Run Payroll'}
+        </button>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
@@ -143,7 +141,9 @@ export default function PayrollPage() {
             </div>
             <div>
               <p className="text-xs text-slate-500">{s.label}</p>
-              <p className="font-bold text-slate-900 text-sm">{(s as any).raw ? s.value : formatCurrency(s.value as number, currency)}</p>
+              <p className="font-bold text-slate-900 text-sm">
+                {(s as any).raw ? s.value : formatCurrency(s.value as number, currency)}
+              </p>
             </div>
           </div>
         ))}
@@ -151,7 +151,11 @@ export default function PayrollPage() {
 
       {loading ? (
         <div className="card p-8 flex items-center justify-center">
-          <div className="flex gap-1">{[0,1,2].map(i => <div key={i} className="w-2 h-2 bg-brand-400 rounded-full animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}</div>
+          <div className="flex gap-1">
+            {[0,1,2].map(i => (
+              <div key={i} className="w-2 h-2 bg-brand-400 rounded-full animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />
+            ))}
+          </div>
         </div>
       ) : employees.length === 0 ? (
         <div className="card p-12 flex flex-col items-center text-center gap-3 text-slate-400">
@@ -174,7 +178,14 @@ export default function PayrollPage() {
           </div>
           <table className="table">
             <thead>
-              <tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">PAYE</th><th className="text-right">NHIF</th><th className="text-right">NSSF</th><th className="text-right">Net Pay</th></tr>
+              <tr>
+                <th>Employee</th>
+                <th className="text-right">Gross</th>
+                <th className="text-right">PAYE</th>
+                <th className="text-right">NHIF</th>
+                <th className="text-right">NSSF</th>
+                <th className="text-right">Net Pay</th>
+              </tr>
             </thead>
             <tbody>
               {payrollLines.map((l: any) => (
@@ -201,7 +212,9 @@ export default function PayrollPage() {
           </table>
           <div className="flex justify-end gap-3 p-4 border-t border-slate-100">
             <button className="btn-secondary">Export Payslips</button>
-            <button className="btn-primary"><CheckCircle2 size={15} />Approve & Process</button>
+            <button className="btn-primary">
+              <CheckCircle2 size={15} />Approve & Process
+            </button>
           </div>
         </div>
       )}
