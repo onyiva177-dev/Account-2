@@ -4,6 +4,47 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import toast from 'react-hot-toast' 
+const [generatingInsights, setGeneratingInsights] = useState(false)
+
+const generateInsights = async () => {
+  setGeneratingInsights(true)
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: `You are a financial advisor. Analyze this data and return ONLY a JSON array of 3 insights, no other text:
+          Revenue: ${stats.totalRevenue}, Expenses: ${stats.totalExpenses}, Net Profit: ${stats.netProfit}, Cash: ${stats.cashBalance}
+          Format: [{"title":"...","description":"...","severity":"info|warning|positive|critical","type":"suggestion"}]`
+        }]
+      })
+    })
+    const data = await response.json()
+    const text = data.content[0].text
+    const clean = text.replace(/\`\`\`json|\`\`\`/g, '').trim()
+    const parsed = JSON.parse(clean)
+    await supabase.from('ai_insights').insert(
+      parsed.map((i: any) => ({
+        organization_id: organization!.id,
+        type: i.type || 'suggestion',
+        title: i.title,
+        description: i.description,
+        severity: i.severity || 'info',
+        is_read: false,
+      }))
+    )
+    toast.success('AI insights generated!')
+    loadAll()
+  } catch (e) {
+    toast.error('Failed to generate insights')
+  }
+  setGeneratingInsights(false)
+}
 import {
   TrendingUp, TrendingDown, DollarSign, CreditCard,
   AlertTriangle, CheckCircle2, Activity, RefreshCw,
@@ -266,7 +307,15 @@ export default function DashboardPage() {
               <Sparkles size={13} className="text-purple-600" />
             </div>
             <h3 className="font-semibold text-slate-900">AI Insights</h3>
-            {insights.length > 0 && <span className="ai-badge ml-auto">{insights.length} new</span>}
+            {insights.length > 0 && <span className="ai-badge">{insights.length} new</span>}
+<button
+  onClick={generateInsights}
+  disabled={generatingInsights}
+  className="btn-secondary text-xs ml-auto py-1 px-3"
+>
+  <Sparkles size={12} />
+  {generatingInsights ? 'Analyzing...' : 'Generate'}
+</button>
           </div>
           {insights.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-slate-400 gap-3">
