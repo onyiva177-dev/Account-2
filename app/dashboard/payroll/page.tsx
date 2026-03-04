@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import { formatCurrency } from '@/lib/utils'
-import { Plus, Play, Users, DollarSign, Calculator, CheckCircle2, UserX } from 'lucide-react'
+import { Plus, Play, Users, DollarSign, Calculator, CheckCircle2, UserX, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function PayrollPage() {
@@ -15,6 +15,15 @@ export default function PayrollPage() {
   const [payrollLines, setPayrollLines] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState(false)
+  const [showAddEmployee, setShowAddEmployee] = useState(false)
+  const [savingEmployee, setSavingEmployee] = useState(false)
+  const [empForm, setEmpForm] = useState({
+    full_name: '', email: '', phone: '',
+    employee_number: '', department: '', job_title: '',
+    employment_type: 'full_time', gross_salary: '',
+    tax_pin: '', nhif_number: '', nssf_number: '',
+    hire_date: new Date().toISOString().split('T')[0],
+  })
 
   useEffect(() => {
     if (!organization) return
@@ -42,6 +51,52 @@ export default function PayrollPage() {
     setLoading(false)
   }
 
+  const saveEmployee = async () => {
+    if (!empForm.full_name || !empForm.gross_salary || !empForm.employee_number)
+      return toast.error('Name, employee number and salary are required')
+    setSavingEmployee(true)
+
+    // Create contact first
+    const { data: contact, error: contactError } = await supabase
+      .from('contacts')
+      .insert({
+        organization_id: organization!.id,
+        type: 'employee',
+        name: empForm.full_name,
+        email: empForm.email,
+        phone: empForm.phone,
+      })
+      .select().single()
+
+    if (contactError) { toast.error('Failed to create contact'); setSavingEmployee(false); return }
+
+    // Create employee
+    const { error: empError } = await supabase
+      .from('employees')
+      .insert({
+        organization_id: organization!.id,
+        contact_id: contact.id,
+        employee_number: empForm.employee_number,
+        department: empForm.department,
+        job_title: empForm.job_title,
+        employment_type: empForm.employment_type,
+        gross_salary: Number(empForm.gross_salary),
+        tax_pin: empForm.tax_pin,
+        nhif_number: empForm.nhif_number,
+        nssf_number: empForm.nssf_number,
+        hire_date: empForm.hire_date,
+        is_active: true,
+      })
+
+    if (empError) { toast.error('Failed to save employee: ' + empError.message); setSavingEmployee(false); return }
+
+    toast.success(`${empForm.full_name} added successfully`)
+    setShowAddEmployee(false)
+    setEmpForm({ full_name: '', email: '', phone: '', employee_number: '', department: '', job_title: '', employment_type: 'full_time', gross_salary: '', tax_pin: '', nhif_number: '', nssf_number: '', hire_date: new Date().toISOString().split('T')[0] })
+    setSavingEmployee(false)
+    load()
+  }
+
   const computePAYE = (gross: number) => {
     let tax = 0
     if (gross <= 24000) tax = gross * 0.10
@@ -52,22 +107,14 @@ export default function PayrollPage() {
   }
 
   const computeNHIF = (gross: number) => {
-    if (gross < 6000) return 150
-    if (gross < 8000) return 300
-    if (gross < 12000) return 400
-    if (gross < 15000) return 500
-    if (gross < 20000) return 600
-    if (gross < 25000) return 750
-    if (gross < 30000) return 850
-    if (gross < 35000) return 900
-    if (gross < 40000) return 950
-    if (gross < 45000) return 1000
-    if (gross < 50000) return 1100
-    if (gross < 60000) return 1200
-    if (gross < 70000) return 1300
-    if (gross < 80000) return 1400
-    if (gross < 90000) return 1500
-    if (gross < 100000) return 1600
+    if (gross < 6000) return 150; if (gross < 8000) return 300
+    if (gross < 12000) return 400; if (gross < 15000) return 500
+    if (gross < 20000) return 600; if (gross < 25000) return 750
+    if (gross < 30000) return 850; if (gross < 35000) return 900
+    if (gross < 40000) return 950; if (gross < 45000) return 1000
+    if (gross < 50000) return 1100; if (gross < 60000) return 1200
+    if (gross < 70000) return 1300; if (gross < 80000) return 1400
+    if (gross < 90000) return 1500; if (gross < 100000) return 1600
     return 1700
   }
 
@@ -116,6 +163,8 @@ export default function PayrollPage() {
     nhif: acc.nhif + l.nhif, nssf: acc.nssf + l.nssf, net: acc.net + l.net_pay,
   }), { gross: 0, paye: 0, nhif: 0, nssf: 0, net: 0 })
 
+  const upd = (k: string, v: string) => setEmpForm(p => ({ ...p, [k]: v }))
+
   return (
     <div className="space-y-5 animate-fade-up">
       <div className="flex items-center justify-between">
@@ -123,9 +172,14 @@ export default function PayrollPage() {
           <h1 className="text-xl font-bold text-slate-900">Payroll</h1>
           <p className="text-sm text-slate-500 mt-0.5">Kenya PAYE, NHIF & NSSF auto-calculated</p>
         </div>
-        <button onClick={runPayroll} disabled={running || employees.length === 0} className="btn-primary">
-          <Play size={15} />{running ? 'Running...' : 'Run Payroll'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowAddEmployee(true)} className="btn-secondary">
+            <Plus size={15} />Add Employee
+          </button>
+          <button onClick={runPayroll} disabled={running || employees.length === 0} className="btn-primary">
+            <Play size={15} />{running ? 'Running...' : 'Run Payroll'}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-4 gap-4">
@@ -149,43 +203,54 @@ export default function PayrollPage() {
         ))}
       </div>
 
+      {/* Employees list */}
+      {employees.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h3 className="font-semibold text-slate-900">Active Employees</h3>
+          </div>
+          <table className="table">
+            <thead>
+              <tr><th>Name</th><th>Employee #</th><th>Department</th><th>Job Title</th><th className="text-right">Gross Salary</th></tr>
+            </thead>
+            <tbody>
+              {employees.map(e => (
+                <tr key={e.id}>
+                  <td className="font-medium text-slate-800">{e.contact?.name}</td>
+                  <td className="font-mono text-xs text-brand-600">{e.employee_number}</td>
+                  <td className="text-slate-500 text-sm">{e.department || '—'}</td>
+                  <td className="text-slate-500 text-sm">{e.job_title || '—'}</td>
+                  <td className="text-right font-mono text-sm font-semibold">{formatCurrency(e.gross_salary, currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {loading ? (
         <div className="card p-8 flex items-center justify-center">
-          <div className="flex gap-1">
-            {[0,1,2].map(i => (
-              <div key={i} className="w-2 h-2 bg-brand-400 rounded-full animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />
-            ))}
-          </div>
+          <div className="flex gap-1">{[0,1,2].map(i => <div key={i} className="w-2 h-2 bg-brand-400 rounded-full animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}</div>
         </div>
       ) : employees.length === 0 ? (
         <div className="card p-12 flex flex-col items-center text-center gap-3 text-slate-400">
           <UserX size={36} className="opacity-40" />
           <div>
-            <p className="font-medium text-slate-700">No employees found</p>
-            <p className="text-sm mt-1">Add employees in the <code className="bg-slate-100 px-1 rounded">employees</code> table in Supabase with their gross salary.</p>
+            <p className="font-medium text-slate-700">No employees yet</p>
+            <p className="text-sm mt-1">Click "Add Employee" to get started.</p>
           </div>
+          <button onClick={() => setShowAddEmployee(true)} className="btn-primary mt-2">
+            <Plus size={15} />Add First Employee
+          </button>
         </div>
-      ) : payrollLines.length === 0 ? (
-        <div className="card p-8 flex flex-col items-center text-center gap-3 text-slate-400">
-          <Play size={36} className="opacity-40" />
-          <p className="font-medium text-slate-700">{employees.length} employee{employees.length !== 1 ? 's' : ''} ready</p>
-          <p className="text-sm">Click "Run Payroll" to calculate salaries</p>
-        </div>
-      ) : (
+      ) : payrollLines.length > 0 && (
         <div className="card overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
             <h3 className="font-semibold text-slate-900">Latest Payroll Run — Draft</h3>
           </div>
           <table className="table">
             <thead>
-              <tr>
-                <th>Employee</th>
-                <th className="text-right">Gross</th>
-                <th className="text-right">PAYE</th>
-                <th className="text-right">NHIF</th>
-                <th className="text-right">NSSF</th>
-                <th className="text-right">Net Pay</th>
-              </tr>
+              <tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">PAYE</th><th className="text-right">NHIF</th><th className="text-right">NSSF</th><th className="text-right">Net Pay</th></tr>
             </thead>
             <tbody>
               {payrollLines.map((l: any) => (
@@ -212,9 +277,79 @@ export default function PayrollPage() {
           </table>
           <div className="flex justify-end gap-3 p-4 border-t border-slate-100">
             <button className="btn-secondary">Export Payslips</button>
-            <button className="btn-primary">
-              <CheckCircle2 size={15} />Approve & Process
-            </button>
+            <button className="btn-primary"><CheckCircle2 size={15} />Approve & Process</button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Employee Modal */}
+      {showAddEmployee && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col animate-fade-up">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="text-lg font-semibold text-slate-900">Add Employee</h2>
+              <button onClick={() => setShowAddEmployee(false)} className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Personal Details</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="input-label">Full Name *</label><input className="input" placeholder="Jane Mwangi" value={empForm.full_name} onChange={e => upd('full_name', e.target.value)} /></div>
+                <div><label className="input-label">Email</label><input className="input" type="email" placeholder="jane@company.com" value={empForm.email} onChange={e => upd('email', e.target.value)} /></div>
+                <div><label className="input-label">Phone</label><input className="input" placeholder="+254700000000" value={empForm.phone} onChange={e => upd('phone', e.target.value)} /></div>
+                <div><label className="input-label">Hire Date</label><input className="input" type="date" value={empForm.hire_date} onChange={e => upd('hire_date', e.target.value)} /></div>
+              </div>
+
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider pt-2">Employment Details</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className="input-label">Employee Number *</label><input className="input" placeholder="EMP-001" value={empForm.employee_number} onChange={e => upd('employee_number', e.target.value)} /></div>
+                <div><label className="input-label">Department</label><input className="input" placeholder="Finance" value={empForm.department} onChange={e => upd('department', e.target.value)} /></div>
+                <div><label className="input-label">Job Title</label><input className="input" placeholder="Accountant" value={empForm.job_title} onChange={e => upd('job_title', e.target.value)} /></div>
+                <div>
+                  <label className="input-label">Employment Type</label>
+                  <select className="input" value={empForm.employment_type} onChange={e => upd('employment_type', e.target.value)}>
+                    <option value="full_time">Full Time</option>
+                    <option value="part_time">Part Time</option>
+                    <option value="contract">Contract</option>
+                    <option value="casual">Casual</option>
+                  </select>
+                </div>
+                <div className="col-span-2"><label className="input-label">Gross Monthly Salary (KES) *</label><input className="input" type="number" placeholder="50000" value={empForm.gross_salary} onChange={e => upd('gross_salary', e.target.value)} /></div>
+              </div>
+
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider pt-2">Tax & Compliance</p>
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className="input-label">KRA PIN</label><input className="input" placeholder="A000000000X" value={empForm.tax_pin} onChange={e => upd('tax_pin', e.target.value)} /></div>
+                <div><label className="input-label">NHIF Number</label><input className="input" placeholder="0000000" value={empForm.nhif_number} onChange={e => upd('nhif_number', e.target.value)} /></div>
+                <div><label className="input-label">NSSF Number</label><input className="input" placeholder="0000000" value={empForm.nssf_number} onChange={e => upd('nssf_number', e.target.value)} /></div>
+              </div>
+
+              {empForm.gross_salary && (
+                <div className="bg-slate-50 rounded-xl p-4 text-sm">
+                  <p className="font-semibold text-slate-700 mb-2">Tax Preview</p>
+                  <div className="grid grid-cols-4 gap-3 text-center">
+                    {[
+                      { label: 'Gross', value: Number(empForm.gross_salary) },
+                      { label: 'PAYE', value: computePAYE(Number(empForm.gross_salary)) },
+                      { label: 'NHIF', value: computeNHIF(Number(empForm.gross_salary)) },
+                      { label: 'Net Pay', value: Number(empForm.gross_salary) - computePAYE(Number(empForm.gross_salary)) - computeNHIF(Number(empForm.gross_salary)) - computeNSSF(Number(empForm.gross_salary)) },
+                    ].map(item => (
+                      <div key={item.label} className="bg-white rounded-lg p-2">
+                        <p className="text-xs text-slate-500">{item.label}</p>
+                        <p className="font-bold text-slate-900 text-xs mt-1">{formatCurrency(item.value, currency)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100">
+              <button onClick={() => setShowAddEmployee(false)} className="btn-secondary">Cancel</button>
+              <button onClick={saveEmployee} disabled={savingEmployee} className="btn-primary">
+                {savingEmployee ? 'Saving...' : 'Add Employee'}
+              </button>
+            </div>
           </div>
         </div>
       )}
