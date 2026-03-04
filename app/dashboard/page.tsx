@@ -113,45 +113,35 @@ export default function DashboardPage() {
   }
 
   const generateInsights = async () => {
-    if (!organization) return
-    setGeneratingInsights(true)
-    try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: `You are a financial advisor. Analyze this data and return ONLY a JSON array of 3 insights, no other text:
-            Revenue: ${stats.totalRevenue}, Expenses: ${stats.totalExpenses}, Net Profit: ${stats.netProfit}, Cash: ${stats.cashBalance}, AR: ${stats.accountsReceivable}, AP: ${stats.accountsPayable}
-            Format: [{"title":"...","description":"...","severity":"info|warning|positive|critical","type":"suggestion"}]`
-          }]
-        })
-      })
-      const data = await response.json()
-      const text = data.content[0].text
-      const clean = text.replace(/```json|```/g, '').trim()
-      const parsed = JSON.parse(clean)
-      await supabase.from('ai_insights').insert(
-        parsed.map((i: any) => ({
-          organization_id: organization!.id,
-          type: i.type || 'suggestion',
-          title: i.title,
-          description: i.description,
-          severity: i.severity || 'info',
-          is_read: false,
-        }))
-      )
-      toast.success('AI insights generated!')
-      loadAll()
-    } catch (e) {
-      toast.error('Failed to generate insights. Check your API key in Vercel.')
-    }
-    setGeneratingInsights(false)
+  if (!organization) return
+  setGeneratingInsights(true)
+  try {
+    const response = await fetch('/api/insights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stats })
+    })
+    const data = await response.json()
+    const text = data.content[0].text
+    const clean = text.replace(/```json|```/g, '').trim()
+    const parsed = JSON.parse(clean)
+    await supabase.from('ai_insights').insert(
+      parsed.map((i: any) => ({
+        organization_id: organization!.id,
+        type: i.type || 'suggestion',
+        title: i.title,
+        description: i.description,
+        severity: i.severity || 'info',
+        is_read: false,
+      }))
+    )
+    toast.success('AI insights generated!')
+    loadAll()
+  } catch (e) {
+    toast.error('Failed to generate insights')
   }
-
+  setGeneratingInsights(false)
+}
   const greeting = () => {
     const h = new Date().getHours()
     if (h < 12) return 'Good morning'
