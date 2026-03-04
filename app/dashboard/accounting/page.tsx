@@ -99,18 +99,25 @@ const loadData = async () => {
 
     if (error) { toast.error('Failed to save entry'); return }
 
-    await supabase.from('journal_lines').insert(
-      newEntry.lines
-        .filter(l => l.account_id)
-        .map((l, i) => ({
-          journal_entry_id: entry.id,
-          account_id: l.account_id,
-          description: l.description,
-          debit: Number(l.debit) || 0,
-          credit: Number(l.credit) || 0,
-          line_number: i + 1
-        }))
-    )
+   const { error: linesError } = await supabase.from('journal_lines').insert(
+  newEntry.lines
+    .filter(l => l.account_id)
+    .map((l, i) => ({
+      organization_id: organization!.id,
+      journal_entry_id: entry.id,
+      account_id: l.account_id,
+      description: l.description,
+      debit: Number(l.debit) || 0,
+      credit: Number(l.credit) || 0,
+      line_number: i + 1
+    }))
+)
+
+if (linesError) {
+  toast.error('Entry saved but lines failed: ' + linesError.message)
+  console.error(linesError)
+  return
+}
 
     toast.success(`Journal entry ${status === 'posted' ? 'posted' : 'saved as draft'}`)
     setShowNewEntry(false)
