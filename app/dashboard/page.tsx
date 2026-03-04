@@ -4,52 +4,11 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import { formatCurrency, formatDate } from '@/lib/utils'
-import toast from 'react-hot-toast' 
-const [generatingInsights, setGeneratingInsights] = useState(false)
-
-const generateInsights = async () => {
-  setGeneratingInsights(true)
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content: `You are a financial advisor. Analyze this data and return ONLY a JSON array of 3 insights, no other text:
-          Revenue: ${stats.totalRevenue}, Expenses: ${stats.totalExpenses}, Net Profit: ${stats.netProfit}, Cash: ${stats.cashBalance}
-          Format: [{"title":"...","description":"...","severity":"info|warning|positive|critical","type":"suggestion"}]`
-        }]
-      })
-    })
-    const data = await response.json()
-    const text = data.content[0].text
-    const clean = text.replace(/\`\`\`json|\`\`\`/g, '').trim()
-    const parsed = JSON.parse(clean)
-    await supabase.from('ai_insights').insert(
-      parsed.map((i: any) => ({
-        organization_id: organization!.id,
-        type: i.type || 'suggestion',
-        title: i.title,
-        description: i.description,
-        severity: i.severity || 'info',
-        is_read: false,
-      }))
-    )
-    toast.success('AI insights generated!')
-    loadAll()
-  } catch (e) {
-    toast.error('Failed to generate insights')
-  }
-  setGeneratingInsights(false)
-}
+import toast from 'react-hot-toast'
 import {
   TrendingUp, TrendingDown, DollarSign, CreditCard,
   AlertTriangle, CheckCircle2, Activity, RefreshCw,
-  Sparkles, ArrowUpRight, ArrowDownRight, Clock,
-  ChevronRight, Lightbulb
+  Sparkles, Clock, ChevronRight, Lightbulb
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -70,6 +29,7 @@ export default function DashboardPage() {
   const [recentTransactions, setRecentTransactions] = useState<any[]>([])
   const [insights, setInsights] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [generatingInsights, setGeneratingInsights] = useState(false)
 
   useEffect(() => {
     if (!organization) return
@@ -150,6 +110,46 @@ export default function DashboardPage() {
     setInsights(aiInsights || [])
 
     setLoading(false)
+  }
+
+  const generateInsights = async () => {
+    if (!organization) return
+    setGeneratingInsights(true)
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `You are a financial advisor. Analyze this data and return ONLY a JSON array of 3 insights, no other text:
+            Revenue: ${stats.totalRevenue}, Expenses: ${stats.totalExpenses}, Net Profit: ${stats.netProfit}, Cash: ${stats.cashBalance}, AR: ${stats.accountsReceivable}, AP: ${stats.accountsPayable}
+            Format: [{"title":"...","description":"...","severity":"info|warning|positive|critical","type":"suggestion"}]`
+          }]
+        })
+      })
+      const data = await response.json()
+      const text = data.content[0].text
+      const clean = text.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(clean)
+      await supabase.from('ai_insights').insert(
+        parsed.map((i: any) => ({
+          organization_id: organization!.id,
+          type: i.type || 'suggestion',
+          title: i.title,
+          description: i.description,
+          severity: i.severity || 'info',
+          is_read: false,
+        }))
+      )
+      toast.success('AI insights generated!')
+      loadAll()
+    } catch (e) {
+      toast.error('Failed to generate insights. Check your API key in Vercel.')
+    }
+    setGeneratingInsights(false)
   }
 
   const greeting = () => {
@@ -308,33 +308,33 @@ export default function DashboardPage() {
             </div>
             <h3 className="font-semibold text-slate-900">AI Insights</h3>
             {insights.length > 0 && <span className="ai-badge">{insights.length} new</span>}
-<button
-  onClick={generateInsights}
-  disabled={generatingInsights}
-  className="btn-secondary text-xs ml-auto py-1 px-3"
->
-  <Sparkles size={12} />
-  {generatingInsights ? 'Analyzing...' : 'Generate'}
-</button>
+            <button
+              onClick={generateInsights}
+              disabled={generatingInsights}
+              className="btn-secondary text-xs ml-auto py-1 px-3"
+            >
+              <Sparkles size={12} />
+              {generatingInsights ? 'Analyzing...' : 'Generate'}
+            </button>
           </div>
           {insights.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-slate-400 gap-3">
               <Lightbulb size={28} className="opacity-30" />
               <div className="text-center">
                 <p className="text-sm font-medium text-slate-500">No insights yet</p>
-                <p className="text-xs mt-1">Insights appear as you record transactions and journal entries</p>
+                <p className="text-xs mt-1">Click Generate to get AI-powered financial insights</p>
               </div>
             </div>
           ) : (
             <div className="space-y-3">
               {insights.map(insight => (
                 <div key={insight.id} className={`flex gap-3 p-3 rounded-xl border ${
-                  insight.severity === 'warning' ? 'text-warning-600 bg-amber-50 border-amber-200' :
-                  insight.severity === 'positive' ? 'text-success-600 bg-green-50 border-green-200' :
-                  insight.severity === 'critical' ? 'text-danger-600 bg-red-50 border-red-200' :
-                  'text-brand-600 bg-blue-50 border-brand-200'
+                  insight.severity === 'warning' ? 'bg-amber-50 border-amber-200' :
+                  insight.severity === 'positive' ? 'bg-green-50 border-green-200' :
+                  insight.severity === 'critical' ? 'bg-red-50 border-red-200' :
+                  'bg-blue-50 border-blue-200'
                 }`}>
-                  <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+                  <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-slate-500" />
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-900">{insight.title}</p>
                     <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{insight.description}</p>
@@ -369,10 +369,15 @@ export default function DashboardPage() {
                     <p className="text-xs text-slate-400 mt-0.5">{tx.number} · {formatDate(tx.date)}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-4">
-                    <span className={`text-sm font-semibold ${['bill','expense'].includes(tx.type) ? 'text-danger-500' : 'text-slate-900'}`}>
+                    <span className={`text-sm font-semibold ${['bill','expense'].includes(tx.type) ? 'text-red-500' : 'text-slate-900'}`}>
                       {['bill','expense'].includes(tx.type) ? '-' : '+'}{formatCurrency(tx.total, currency)}
                     </span>
-                    <span className={`badge ${tx.status === 'paid' ? 'bg-green-100 text-green-700' : tx.status === 'overdue' ? 'bg-red-100 text-red-700' : tx.status === 'partial' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'}`}>
+                    <span className={`badge ${
+                      tx.status === 'paid' ? 'bg-green-100 text-green-700' :
+                      tx.status === 'overdue' ? 'bg-red-100 text-red-700' :
+                      tx.status === 'partial' ? 'bg-blue-100 text-blue-700' :
+                      'bg-amber-100 text-amber-700'
+                    }`}>
                       {tx.status}
                     </span>
                   </div>
