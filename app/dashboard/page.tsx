@@ -112,7 +112,7 @@ export default function DashboardPage() {
     setLoading(false)
   }
 
-  const generateInsights = async () => {
+const generateInsights = async () => {
   if (!organization) return
   setGeneratingInsights(true)
   try {
@@ -122,37 +122,16 @@ export default function DashboardPage() {
       body: JSON.stringify({ stats })
     })
 
-    if (!response.ok) {
-      const errText = await response.text()
-      console.error('API route error:', errText)
-      toast.error('API error: ' + errText)
-      setGeneratingInsights(false)
-      return
-    }
-
     const data = await response.json()
-    console.log('API response:', JSON.stringify(data))
 
     if (data.error) {
-      console.error('Anthropic error:', data.error)
-      toast.error('Anthropic error: ' + data.error.message)
+      toast.error('AI error: ' + data.error.message || data.error)
       setGeneratingInsights(false)
       return
     }
-
-    const text = data.content?.[0]?.text
-    if (!text) {
-      console.error('No text in response:', data)
-      toast.error('No response text from AI')
-      setGeneratingInsights(false)
-      return
-    }
-
-    const clean = text.replace(/```json|```/g, '').trim()
-    const parsed = JSON.parse(clean)
 
     await supabase.from('ai_insights').insert(
-      parsed.map((i: any) => ({
+      data.insights.map((i: any) => ({
         organization_id: organization!.id,
         type: i.type || 'suggestion',
         title: i.title,
@@ -164,7 +143,6 @@ export default function DashboardPage() {
     toast.success('AI insights generated!')
     loadAll()
   } catch (e: any) {
-    console.error('Generate insights error:', e)
     toast.error('Failed: ' + e.message)
   }
   setGeneratingInsights(false)
