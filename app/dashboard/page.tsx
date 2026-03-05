@@ -121,10 +121,36 @@ export default function DashboardPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stats })
     })
+
+    if (!response.ok) {
+      const errText = await response.text()
+      console.error('API route error:', errText)
+      toast.error('API error: ' + errText)
+      setGeneratingInsights(false)
+      return
+    }
+
     const data = await response.json()
-    const text = data.content[0].text
+    console.log('API response:', JSON.stringify(data))
+
+    if (data.error) {
+      console.error('Anthropic error:', data.error)
+      toast.error('Anthropic error: ' + data.error.message)
+      setGeneratingInsights(false)
+      return
+    }
+
+    const text = data.content?.[0]?.text
+    if (!text) {
+      console.error('No text in response:', data)
+      toast.error('No response text from AI')
+      setGeneratingInsights(false)
+      return
+    }
+
     const clean = text.replace(/```json|```/g, '').trim()
     const parsed = JSON.parse(clean)
+
     await supabase.from('ai_insights').insert(
       parsed.map((i: any) => ({
         organization_id: organization!.id,
@@ -137,8 +163,9 @@ export default function DashboardPage() {
     )
     toast.success('AI insights generated!')
     loadAll()
-  } catch (e) {
-    toast.error('Failed to generate insights')
+  } catch (e: any) {
+    console.error('Generate insights error:', e)
+    toast.error('Failed: ' + e.message)
   }
   setGeneratingInsights(false)
 }
