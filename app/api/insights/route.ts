@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(req: NextRequest) {
   const { stats } = await req.json()
 
+  if (!process.env.GEMINI_API_KEY) {
+    return NextResponse.json({ error: 'GEMINI_API_KEY not set in environment' }, { status: 500 })
+  }
+
   const prompt = `You are a financial advisor. Analyze this data and return ONLY a JSON array of 3 insights, no other text:
   Revenue: ${stats.totalRevenue}, Expenses: ${stats.totalExpenses}, Net Profit: ${stats.netProfit}, Cash: ${stats.cashBalance}, AR: ${stats.accountsReceivable}, AP: ${stats.accountsPayable}
   Format: [{"title":"...","description":"...","severity":"info|warning|positive|critical","type":"suggestion"}]`
@@ -20,9 +24,10 @@ export async function POST(req: NextRequest) {
   )
 
   const data = await response.json()
+  console.log('Gemini response:', JSON.stringify(data))
 
   if (data.error) {
-    return NextResponse.json({ error: data.error }, { status: 500 })
+    return NextResponse.json({ error: data.error.message }, { status: 500 })
   }
 
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
