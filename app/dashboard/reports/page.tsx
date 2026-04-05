@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import { formatCurrency } from '@/lib/utils'
-import { FileText, Download, Play, TrendingUp, BarChart2, DollarSign, Activity } from 'lucide-react'
+import { FileText, Download, Play, TrendingUp, BarChart2, DollarSign, Activity, AlertTriangle, CheckCircle2 } from 'lucide-react'
 
 const REPORTS = [
   { id: 'income', name: 'Income Statement', icon: TrendingUp, desc: 'Profit & Loss from your accounts', color: 'text-green-600 bg-green-50' },
@@ -43,11 +43,31 @@ export default function ReportsPage() {
     setLoading(false)
   }
 
+  // ─── FIXED: Account balance helper functions ──────────────────────────────
+  // DB stores: balance = SUM(debit) - SUM(credit) across all journal_lines
+  // Debit-normal (assets, expenses): positive balance = Dr side of TB
+  // Credit-normal (liabilities, equity, revenue): negative balance = Cr side of TB
+
+  const getDebitBalance = (a: any): number => {
+    if (a.account_type?.normal_balance === 'debit' && a.balance > 0) return a.balance
+    if (a.account_type?.normal_balance !== 'debit' && a.balance > 0) return a.balance // abnormal
+    return 0
+  }
+
+  const getCreditBalance = (a: any): number => {
+    if (a.account_type?.normal_balance === 'credit' && a.balance < 0) return Math.abs(a.balance)
+    if (a.account_type?.normal_balance === 'debit' && a.balance < 0) return Math.abs(a.balance) // abnormal
+    return 0
+  }
+
+  // Get display value (always positive for presentation)
+  const getDisplayBalance = (a: any): number => {
+    if (a.account_type?.normal_balance === 'debit') return a.balance   // positive = normal
+    return Math.abs(a.balance)                                          // credit-normal stored as negative
+  }
+
   const byCategory = (category: string) =>
     accounts.filter(a => a.account_type?.category === category && a.balance !== 0)
-
-  const sumCategory = (category: string) =>
-    byCategory(category).reduce((s: number, a: any) => s + Math.abs(a.balance), 0)
 
   const revenue = byCategory('revenue')
   const cogs = accounts.filter(a => a.account_type?.category === 'expense' && a.code?.startsWith('5') && a.balance !== 0)
@@ -56,14 +76,27 @@ export default function ReportsPage() {
   const liabilities = byCategory('liability')
   const equity = byCategory('equity')
 
+  // Revenue and expenses use Math.abs because credit-normal revenue is stored negative
   const totalRevenue = revenue.reduce((s: number, a: any) => s + Math.abs(a.balance), 0)
   const totalCOGS = cogs.reduce((s: number, a: any) => s + Math.abs(a.balance), 0)
   const grossProfit = totalRevenue - totalCOGS
   const totalExpenses = expenses.reduce((s: number, a: any) => s + Math.abs(a.balance), 0)
   const netProfit = grossProfit - totalExpenses
+
+  // Assets: debit-normal, stored as positive
   const totalAssets = assets.reduce((s: number, a: any) => s + a.balance, 0)
+  // Liabilities & Equity: credit-normal, stored as negative → use Math.abs
   const totalLiabilities = liabilities.reduce((s: number, a: any) => s + Math.abs(a.balance), 0)
   const totalEquity = equity.reduce((s: number, a: any) => s + Math.abs(a.balance), 0)
+  // ─── FIXED: Include current period net profit in equity for balance check ──
+  const totalEquityWithRetained = totalEquity + netProfit
+  const balanceSheetBalances = Math.abs(totalAssets - (totalLiabilities + totalEquityWithRetained)) < 1
+
+  // Trial balance totals (FIXED)
+  const tbAccounts = accounts.filter(a => a.balance !== 0)
+  const totalTBDebit = tbAccounts.reduce((s: number, a: any) => s + getDebitBalance(a), 0)
+  const totalTBCredit = tbAccounts.reduce((s: number, a: any) => s + getCreditBalance(a), 0)
+  const tbBalanced = Math.abs(totalTBDebit - totalTBCredit) < 1
 
   const ReportRow = ({ label, value, indent = false, bold = false, color = '' }: any) => (
     <div className={`flex justify-between text-sm py-1.5 ${bold ? 'font-bold text-base border-t border-slate-200 mt-1 pt-2' : ''}`}>
@@ -111,6 +144,7 @@ export default function ReportsPage() {
             <div className="card p-10 flex justify-center">
               <div className="flex gap-1">{[0,1,2].map(i => <div key={i} className="w-2 h-2 bg-brand-400 rounded-full animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />)}</div>
             </div>
+
           ) : activeReport === 'income' ? (
             <div className="card p-6 max-w-2xl">
               <div className="text-center mb-6">
@@ -141,7 +175,9 @@ export default function ReportsPage() {
 
                   <div className="flex justify-between py-3 border-t-2 border-slate-900 font-bold text-lg mt-2">
                     <span>Net Profit</span>
-                    <span className={`font-mono ${netProfit >= 0 ? 'text-success-600' : 'text-danger-500'}`}>{formatCurrency(netProfit, currency)}</span>
+                    <span className={`font-mono ${netProfit >= 0 ? 'text-success-600' : 'text-danger-500'}`}>
+                      {netProfit < 0 ? `-${formatCurrency(Math.abs(netProfit), currency)}` : formatCurrency(netProfit, currency)}
+                    </span>
                   </div>
                   {totalRevenue > 0 && <p className="text-right text-xs text-slate-500">Net margin: {((netProfit / totalRevenue) * 100).toFixed(1)}%</p>}
                 </div>
@@ -155,6 +191,17 @@ export default function ReportsPage() {
                 <p className="text-sm text-slate-500">Balance Sheet</p>
                 <p className="text-xs text-slate-400">As of {new Date().toLocaleDateString('en-KE', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
               </div>
+
+              {/* Balance check banner */}
+              {(assets.length > 0 || equity.length > 0) && (
+                <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-4 ${balanceSheetBalances ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {balanceSheetBalances
+                    ? <><CheckCircle2 size={13} /> Balance sheet balances correctly</>
+                    : <><AlertTriangle size={13} /> Balance sheet does not balance — run SUPABASE_FIX.sql to recalculate account balances</>
+                  }
+                </div>
+              )}
+
               <div className="space-y-1">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Assets</p>
                 {assets.length === 0 ? <p className="text-xs text-slate-400 pl-6">No asset balances</p> :
@@ -169,12 +216,23 @@ export default function ReportsPage() {
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-4">Equity</p>
                 {equity.length === 0 ? <p className="text-xs text-slate-400 pl-6">No equity balances</p> :
                   equity.map(a => <ReportRow key={a.id} label={a.name} value={formatCurrency(Math.abs(a.balance), currency)} indent />)}
-                <ReportRow label="Total Equity" value={formatCurrency(totalEquity, currency)} bold />
+
+                {/* ─── FIXED: Add current period net profit to equity ─────── */}
+                {(totalRevenue > 0 || totalExpenses > 0) && (
+                  <ReportRow
+                    label="Current Year Profit / (Loss)"
+                    value={netProfit < 0 ? `(${formatCurrency(Math.abs(netProfit), currency)})` : formatCurrency(netProfit, currency)}
+                    indent
+                    color={netProfit >= 0 ? 'text-success-600' : 'text-danger-500'}
+                  />
+                )}
+
+                <ReportRow label="Total Equity" value={formatCurrency(totalEquityWithRetained, currency)} bold />
 
                 <div className="flex justify-between py-3 border-t-2 border-slate-900 font-bold text-lg mt-2">
                   <span>Liabilities + Equity</span>
-                  <span className={`font-mono ${Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 1 ? 'text-success-600' : 'text-danger-500'}`}>
-                    {formatCurrency(totalLiabilities + totalEquity, currency)}
+                  <span className={`font-mono ${balanceSheetBalances ? 'text-success-600' : 'text-danger-500'}`}>
+                    {formatCurrency(totalLiabilities + totalEquityWithRetained, currency)}
                   </span>
                 </div>
               </div>
@@ -187,23 +245,43 @@ export default function ReportsPage() {
                 <p className="text-sm text-slate-500">Trial Balance</p>
                 <p className="text-xs text-slate-400">As of {new Date().toLocaleDateString('en-KE', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
               </div>
+
+              {!tbBalanced && tbAccounts.length > 0 && (
+                <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-4 bg-red-50 text-red-700">
+                  <AlertTriangle size={13} />
+                  Out of balance by {formatCurrency(Math.abs(totalTBDebit - totalTBCredit), currency)} — run SUPABASE_FIX.sql
+                </div>
+              )}
+
               <table className="table border border-slate-200 rounded-xl overflow-hidden w-full">
                 <thead><tr><th>Code</th><th>Account</th><th className="text-right">Debit</th><th className="text-right">Credit</th></tr></thead>
                 <tbody>
-                  {accounts.filter(a => a.balance !== 0).map(a => (
-                    <tr key={a.id}>
-                      <td className="font-mono text-xs text-brand-600">{a.code}</td>
-                      <td className="text-sm">{a.name}</td>
-                      <td className="text-right font-mono text-sm">{a.account_type?.normal_balance === 'debit' && a.balance > 0 ? formatCurrency(a.balance, currency) : '—'}</td>
-                      <td className="text-right font-mono text-sm">{a.account_type?.normal_balance === 'credit' && a.balance > 0 ? formatCurrency(a.balance, currency) : '—'}</td>
-                    </tr>
-                  ))}
+                  {tbAccounts.map(a => {
+                    const dr = getDebitBalance(a)
+                    const cr = getCreditBalance(a)
+                    return (
+                      <tr key={a.id}>
+                        <td className="font-mono text-xs text-brand-600">{a.code}</td>
+                        <td className="text-sm">{a.name}</td>
+                        {/* ─── FIXED: was `a.balance > 0` for credit accounts — wrong ─── */}
+                        <td className="text-right font-mono text-sm">
+                          {dr > 0 ? formatCurrency(dr, currency) : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="text-right font-mono text-sm">
+                          {cr > 0 ? formatCurrency(cr, currency) : <span className="text-slate-300">—</span>}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
                 <tfoot className="bg-slate-50 font-bold">
                   <tr>
                     <td colSpan={2} className="px-4 py-3">Totals</td>
-                    <td className="text-right px-4 py-3 font-mono">{formatCurrency(accounts.filter(a => a.account_type?.normal_balance === 'debit' && a.balance > 0).reduce((s: number, a: any) => s + a.balance, 0), currency)}</td>
-                    <td className="text-right px-4 py-3 font-mono">{formatCurrency(accounts.filter(a => a.account_type?.normal_balance === 'credit' && a.balance > 0).reduce((s: number, a: any) => s + a.balance, 0), currency)}</td>
+                    {/* ─── FIXED: credit total was using wrong filter ─── */}
+                    <td className="text-right px-4 py-3 font-mono">{formatCurrency(totalTBDebit, currency)}</td>
+                    <td className={`text-right px-4 py-3 font-mono ${tbBalanced ? 'text-success-600' : 'text-danger-500'}`}>
+                      {formatCurrency(totalTBCredit, currency)}
+                    </td>
                   </tr>
                 </tfoot>
               </table>
