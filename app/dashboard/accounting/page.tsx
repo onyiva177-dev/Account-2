@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import { formatCurrency, formatDate, getStatusColor } from '@/lib/utils'
-import { Plus, Search, Filter, Eye, Edit2, CheckCircle2, BookOpen, Sparkles, AlertCircle, X, ChevronDown } from 'lucide-react'
+import { Plus, Search, Filter, Eye, CheckCircle2, BookOpen, AlertCircle, X, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { JournalEntry, Account } from '@/types'
 
@@ -29,37 +29,37 @@ export default function AccountingPage() {
     ]
   })
 
-useEffect(() => {
-  if (!organization) return
-  loadAccounts()
-  loadData()
-}, [organization, tab])
+  useEffect(() => {
+    if (!organization) return
+    loadAccounts()
+    loadData()
+  }, [organization, tab])
 
-const loadAccounts = async () => {
-  const { data } = await supabase
-    .from('accounts')
-    .select('*, account_type:account_types(category, normal_balance)')
-    .eq('organization_id', organization!.id)
-    .eq('is_active', true)
-    .order('code')
-  setAccounts(data || [])
-}
-
-const loadData = async () => {
-  setLoading(true)
-  if (tab === 0) {
+  const loadAccounts = async () => {
     const { data } = await supabase
-      .from('journal_entries')
-      .select('*, journal_lines(*, account:accounts(code, name))')
+      .from('accounts')
+      .select('*, account_type:account_types(category, normal_balance)')
       .eq('organization_id', organization!.id)
-      .order('date', { ascending: false })
-      .limit(50)
-    setEntries(data || [])
-  } else {
-    await loadAccounts()
+      .eq('is_active', true)
+      .order('code')
+    setAccounts(data || [])
   }
-  setLoading(false)
-}
+
+  const loadData = async () => {
+    setLoading(true)
+    if (tab === 0) {
+      const { data } = await supabase
+        .from('journal_entries')
+        .select('*, journal_lines(*, account:accounts(code, name))')
+        .eq('organization_id', organization!.id)
+        .order('date', { ascending: false })
+        .limit(50)
+      setEntries(data || [])
+    } else {
+      await loadAccounts()
+    }
+    setLoading(false)
+  }
 
   const addLine = () => setNewEntry(p => ({
     ...p,
@@ -84,7 +84,7 @@ const loadData = async () => {
   const saveEntry = async (status: 'draft' | 'posted') => {
     if (!newEntry.description) return toast.error('Description is required')
     if (!isBalanced) return toast.error('Debits must equal credits')
-    
+
     const { data: entry, error } = await supabase.from('journal_entries').insert({
       organization_id: organization!.id,
       date: newEntry.date,
@@ -99,25 +99,25 @@ const loadData = async () => {
 
     if (error) { toast.error('Failed to save entry'); return }
 
-   const { error: linesError } = await supabase.from('journal_lines').insert(
-  newEntry.lines
-    .filter(l => l.account_id)
-    .map((l, i) => ({
-      organization_id: organization!.id,
-      journal_entry_id: entry.id,
-      account_id: l.account_id,
-      description: l.description,
-      debit: Number(l.debit) || 0,
-      credit: Number(l.credit) || 0,
-      line_number: i + 1
-    }))
-)
+    const { error: linesError } = await supabase.from('journal_lines').insert(
+      newEntry.lines
+        .filter(l => l.account_id)
+        .map((l, i) => ({
+          organization_id: organization!.id,
+          journal_entry_id: entry.id,
+          account_id: l.account_id,
+          description: l.description,
+          debit: Number(l.debit) || 0,
+          credit: Number(l.credit) || 0,
+          line_number: i + 1
+        }))
+    )
 
-if (linesError) {
-  toast.error('Entry saved but lines failed: ' + linesError.message)
-  console.error(linesError)
-  return
-}
+    if (linesError) {
+      toast.error('Entry saved but lines failed: ' + linesError.message)
+      console.error(linesError)
+      return
+    }
 
     toast.success(`Journal entry ${status === 'posted' ? 'posted' : 'saved as draft'}`)
     setShowNewEntry(false)
@@ -125,18 +125,44 @@ if (linesError) {
     loadData()
   }
 
-  const trialBalance = accounts.reduce((acc: Record<string, { debit: number, credit: number }>, a) => {
+  const currency = organization?.base_currency || 'KES'
+
+  // ─── FIXED: Trial Balance calculation ────────────────────────────────────────
+  // The DB trigger uses: balance += debit - credit
+  // Debit-normal accounts (assets, expenses) → positive balance when active
+  // Credit-normal accounts (liabilities, equity, revenue) → NEGATIVE balance when active
+  // OLD BUG: `if (a.balance >= 0)` excluded ALL credit accounts (they have -ve balance)
+  // FIX: Check normal_balance type to assign correct column regardless of sign
+
+  const tbAccounts = accounts.filter(a => a.balance !== 0)
+
+  const getAccountDebit = (a: Account): number => {
+    if (a.account_type?.normal_balance === 'debit' && a.balance > 0) return a.balance
+    if (a.account_type?.normal_balance !== 'debit' && a.balance > 0) return a.balance // abnormal
+    return 0
+  }
+
+  const getAccountCredit = (a: Account): number => {
+    if (a.account_type?.normal_balance === 'credit' && a.balance < 0) return Math.abs(a.balance)
+    if (a.account_type?.normal_balance === 'debit' && a.balance < 0) return Math.abs(a.balance) // abnormal
+    return 0
+  }
+
+  const totalTBDebit = tbAccounts.reduce((s, a) => s + getAccountDebit(a), 0)
+  const totalTBCredit = tbAccounts.reduce((s, a) => s + getAccountCredit(a), 0)
+  const tbIsBalanced = Math.abs(totalTBDebit - totalTBCredit) < 0.01
+
+  const CATEGORY_ORDER = ['asset', 'liability', 'equity', 'revenue', 'expense']
+  const trialBalance = tbAccounts.reduce((acc: Record<string, { debit: number, credit: number }>, a) => {
     const cat = a.account_type?.category || 'other'
     if (!acc[cat]) acc[cat] = { debit: 0, credit: 0 }
-    const normalBalance = a.account_type?.normal_balance
-    if (a.balance >= 0) {
-      if (normalBalance === 'debit') acc[cat].debit += a.balance
-      else acc[cat].credit += a.balance
-    }
+    acc[cat].debit += getAccountDebit(a)
+    acc[cat].credit += getAccountCredit(a)
     return acc
   }, {})
-
-  const currency = organization?.base_currency || 'KES'
+  const sortedCategories = Object.entries(trialBalance).sort(
+    ([a], [b]) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b)
+  )
 
   return (
     <div className="space-y-5 animate-fade-up">
@@ -278,36 +304,129 @@ if (linesError) {
         </div>
       )}
 
-      {/* Trial Balance */}
+      {/* Trial Balance Tab — FIXED */}
       {tab === 2 && (
-        <div className="card p-6 max-w-2xl">
-          <h2 className="text-lg font-semibold text-slate-900 mb-1">Trial Balance</h2>
-          <p className="text-sm text-slate-500 mb-6">{organization?.name} · As of {new Date().toLocaleDateString('en-KE', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
-          <table className="table border border-slate-200 rounded-xl overflow-hidden">
-            <thead>
-              <tr>
-                <th>Account Category</th>
-                <th className="text-right">Total Debit</th>
-                <th className="text-right">Total Credit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Object.entries(trialBalance).map(([cat, vals]) => (
-                <tr key={cat}>
-                  <td className="font-medium capitalize">{cat}</td>
-                  <td className="text-right font-mono text-sm">{formatCurrency(vals.debit, currency)}</td>
-                  <td className="text-right font-mono text-sm">{formatCurrency(vals.credit, currency)}</td>
+        <div className="space-y-4 max-w-2xl">
+
+          {/* Imbalance warning */}
+          {!tbIsBalanced && tbAccounts.length > 0 && (
+            <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
+              <AlertTriangle size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-red-700">Trial Balance is out of balance</p>
+                <p className="text-xs text-red-600 mt-0.5">
+                  Difference: {formatCurrency(Math.abs(totalTBDebit - totalTBCredit), currency)}.
+                  Run SUPABASE_FIX.sql in your Supabase SQL Editor to recalculate account balances.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Summary by category */}
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-slate-900 mb-1">Trial Balance — Summary</h2>
+            <p className="text-xs text-slate-500 mb-5">
+              {organization?.name} · As of {new Date().toLocaleDateString('en-KE', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </p>
+            <table className="table border border-slate-200 rounded-xl overflow-hidden w-full">
+              <thead>
+                <tr>
+                  <th>Account Category</th>
+                  <th className="text-right">Total Debit</th>
+                  <th className="text-right">Total Credit</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-slate-50 font-bold">
-                <td>Totals</td>
-                <td className="text-right font-mono">{formatCurrency(Object.values(trialBalance).reduce((s, v) => s + v.debit, 0), currency)}</td>
-                <td className="text-right font-mono">{formatCurrency(Object.values(trialBalance).reduce((s, v) => s + v.credit, 0), currency)}</td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody>
+                {sortedCategories.map(([cat, vals]) => (
+                  <tr key={cat}>
+                    <td className="font-medium capitalize">{cat}</td>
+                    <td className="text-right font-mono text-sm">
+                      {vals.debit > 0 ? formatCurrency(vals.debit, currency) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="text-right font-mono text-sm">
+                      {vals.credit > 0 ? formatCurrency(vals.credit, currency) : <span className="text-slate-300">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-50 font-bold">
+                  <td>Totals</td>
+                  <td className="text-right font-mono">{formatCurrency(totalTBDebit, currency)}</td>
+                  <td className={`text-right font-mono ${tbIsBalanced ? 'text-success-600' : 'text-danger-500'}`}>
+                    {formatCurrency(totalTBCredit, currency)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Detailed account-level trial balance */}
+          <div className="card p-6">
+            <h2 className="text-base font-semibold text-slate-900 mb-5">Trial Balance — Detail</h2>
+            <table className="table border border-slate-200 rounded-xl overflow-hidden w-full">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Account</th>
+                  <th className="text-right">Debit</th>
+                  <th className="text-right">Credit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  Array(6).fill(0).map((_, i) => (
+                    <tr key={i}>{Array(4).fill(0).map((_, j) => <td key={j}><div className="skeleton h-4 rounded w-full" /></td>)}</tr>
+                  ))
+                ) : tbAccounts.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="text-center py-8 text-slate-400 text-sm">
+                      No account balances yet. Post journal entries to populate.
+                    </td>
+                  </tr>
+                ) : (
+                  tbAccounts
+                    .filter(a => !search || a.name?.toLowerCase().includes(search.toLowerCase()) || a.code?.includes(search))
+                    .map(a => {
+                      const dr = getAccountDebit(a)
+                      const cr = getAccountCredit(a)
+                      return (
+                        <tr key={a.id}>
+                          <td className="font-mono text-xs text-brand-600">{a.code}</td>
+                          <td className="text-sm">{a.name}</td>
+                          <td className="text-right font-mono text-sm">
+                            {dr > 0 ? formatCurrency(dr, currency) : <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className="text-right font-mono text-sm">
+                            {cr > 0 ? formatCurrency(cr, currency) : <span className="text-slate-300">—</span>}
+                          </td>
+                        </tr>
+                      )
+                    })
+                )}
+              </tbody>
+              <tfoot className="bg-slate-50 font-bold">
+                <tr>
+                  <td colSpan={2} className="px-4 py-3">Totals</td>
+                  <td className="text-right px-4 py-3 font-mono">{formatCurrency(totalTBDebit, currency)}</td>
+                  <td className={`text-right px-4 py-3 font-mono ${tbIsBalanced ? 'text-success-600' : 'text-danger-500'}`}>
+                    {formatCurrency(totalTBCredit, currency)}
+                  </td>
+                </tr>
+                {!tbIsBalanced && (
+                  <tr>
+                    <td colSpan={4} className="px-4 pb-3">
+                      <div className="flex items-center gap-2 text-xs text-red-600">
+                        <AlertCircle size={12} />
+                        Difference: {formatCurrency(Math.abs(totalTBDebit - totalTBCredit), currency)} — see SUPABASE_FIX.sql
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tfoot>
+            </table>
+          </div>
+
         </div>
       )}
 
