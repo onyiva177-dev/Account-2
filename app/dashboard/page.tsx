@@ -15,6 +15,17 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts'
 
+// ─── Compact number formatter for mobile KPI cards ──────────────────────────
+// "KES 33,000.00" overflows a 2-col mobile card → use "KES 33K" on small screens
+function formatCompact(amount: number, currency: string): string {
+  const abs = Math.abs(amount)
+  const sign = amount < 0 ? '-' : ''
+  const prefix = currency === 'KES' ? 'KES ' : `${currency} `
+  if (abs >= 1_000_000) return `${sign}${prefix}${(abs / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000) return `${sign}${prefix}${(abs / 1_000).toFixed(0)}K`
+  return `${sign}${prefix}${abs.toFixed(0)}`
+}
+
 export default function DashboardPage() {
   const supabase = createClient()
   const { organization, profile } = useAppStore()
@@ -112,41 +123,39 @@ export default function DashboardPage() {
     setLoading(false)
   }
 
-const generateInsights = async () => {
-  if (!organization) return
-  setGeneratingInsights(true)
-  try {
-    const response = await fetch('/api/insights', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stats })
-    })
-
-    const data = await response.json()
-
-    if (data.error) {
-      toast.error('AI error: ' + data.error.message || data.error)
-      setGeneratingInsights(false)
-      return
+  const generateInsights = async () => {
+    if (!organization) return
+    setGeneratingInsights(true)
+    try {
+      const response = await fetch('/api/insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stats })
+      })
+      const data = await response.json()
+      if (data.error) {
+        toast.error('AI error: ' + data.error.message || data.error)
+        setGeneratingInsights(false)
+        return
+      }
+      await supabase.from('ai_insights').insert(
+        data.insights.map((i: any) => ({
+          organization_id: organization!.id,
+          type: i.type || 'suggestion',
+          title: i.title,
+          description: i.description,
+          severity: i.severity || 'info',
+          is_read: false,
+        }))
+      )
+      toast.success('AI insights generated!')
+      loadAll()
+    } catch (e: any) {
+      toast.error('Failed: ' + e.message)
     }
-
-    await supabase.from('ai_insights').insert(
-      data.insights.map((i: any) => ({
-        organization_id: organization!.id,
-        type: i.type || 'suggestion',
-        title: i.title,
-        description: i.description,
-        severity: i.severity || 'info',
-        is_read: false,
-      }))
-    )
-    toast.success('AI insights generated!')
-    loadAll()
-  } catch (e: any) {
-    toast.error('Failed: ' + e.message)
+    setGeneratingInsights(false)
   }
-  setGeneratingInsights(false)
-}
+
   const greeting = () => {
     const h = new Date().getHours()
     if (h < 12) return 'Good morning'
@@ -155,90 +164,109 @@ const generateInsights = async () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-up">
-      <div className="flex items-start justify-between">
+    <div className="space-y-4 sm:space-y-6 animate-fade-up">
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900 leading-tight">
             {greeting()}, {profile?.full_name?.split(' ')[0] || 'there'} 👋
           </h1>
-          <p className="text-slate-500 text-sm mt-1">
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">
             {new Date().toLocaleDateString('en-KE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         </div>
-        <button onClick={loadAll} className="btn-secondary">
-          <RefreshCw size={15} />Refresh
+        <button onClick={loadAll} className="btn-secondary flex-shrink-0 text-xs sm:text-sm">
+          <RefreshCw size={14} />
+          <span className="hidden sm:inline">Refresh</span>
         </button>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── KPI Cards ──────────────────────────────────────────────────────── */}
+      {/* FIX: text-2xl overflows 2-col mobile cards.
+          Solution: use compact format (e.g. "KES 33K") on mobile,
+          full format on sm+ screens. Font size also scales down. */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[
-          { title: 'Total Revenue', value: stats.totalRevenue, icon: TrendingUp, sub: 'All revenue accounts' },
-          { title: 'Total Expenses', value: stats.totalExpenses, icon: TrendingDown, sub: 'All expense accounts' },
-          { title: 'Net Profit', value: stats.netProfit, icon: DollarSign, sub: 'Revenue minus expenses' },
-          { title: 'Cash & Bank', value: stats.cashBalance, icon: CreditCard, sub: 'Cash + bank balances' },
+          { title: 'Revenue', value: stats.totalRevenue, icon: TrendingUp, sub: 'All revenue accounts', iconBg: 'bg-green-50', iconColor: 'text-green-600' },
+          { title: 'Expenses', value: stats.totalExpenses, icon: TrendingDown, sub: 'All expense accounts', iconBg: 'bg-red-50', iconColor: 'text-red-500' },
+          { title: 'Net Profit', value: stats.netProfit, icon: DollarSign, sub: 'Revenue minus expenses', iconBg: 'bg-brand-50', iconColor: 'text-brand-600' },
+          { title: 'Cash & Bank', value: stats.cashBalance, icon: CreditCard, sub: 'Cash + bank balances', iconBg: 'bg-purple-50', iconColor: 'text-purple-600' },
         ].map(s => (
-          <div key={s.title} className="stat-card">
+          <div key={s.title} className="card p-3 sm:p-5 flex flex-col gap-2 sm:gap-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-500 font-medium">{s.title}</p>
-              <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center">
-                <s.icon size={18} className="text-brand-600" />
+              {/* Shorten title on mobile */}
+              <p className="text-xs sm:text-sm text-slate-500 font-medium leading-tight">{s.title}</p>
+              <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-xl ${s.iconBg} flex items-center justify-center flex-shrink-0`}>
+                <s.icon size={14} className={`sm:w-[18px] sm:h-[18px] ${s.iconColor}`} />
               </div>
             </div>
             <div>
-              {loading
-                ? <div className="skeleton h-7 w-36 rounded mt-1" />
-                : <p className="text-2xl font-bold text-slate-900 tracking-tight">{formatCurrency(s.value, currency)}</p>
-              }
-              <p className="text-xs text-slate-400 mt-1">{s.sub}</p>
+              {loading ? (
+                <div className="skeleton h-6 sm:h-7 w-full rounded mt-1" />
+              ) : (
+                <>
+                  {/* Mobile: compact (e.g. KES 33K) | Desktop: full */}
+                  <p className={`font-bold tracking-tight leading-none ${
+                    s.value < 0 ? 'text-red-500' : 'text-slate-900'
+                  }`}>
+                    {/* Compact value shown on mobile, hidden on sm+ */}
+                    <span className="text-lg sm:hidden">
+                      {s.value < 0 && <span className="text-red-500">-</span>}
+                      {formatCompact(Math.abs(s.value), currency)}
+                    </span>
+                    {/* Full value hidden on mobile, shown on sm+ */}
+                    <span className="hidden sm:inline text-2xl">
+                      {formatCurrency(s.value, currency)}
+                    </span>
+                  </p>
+                </>
+              )}
+              <p className="text-xs text-slate-400 mt-1 leading-tight hidden sm:block">{s.sub}</p>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Secondary stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="card p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-            <Clock size={18} className="text-amber-600" />
+      {/* ── Secondary stats ──────────────────────────────────────────────────── */}
+      {/* FIX: grid-cols-3 is too cramped on mobile → scroll horizontally or stack */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+        {[
+          { label: 'Accounts Receivable', value: stats.accountsReceivable, iconBg: 'bg-amber-50', iconColor: 'text-amber-600', Icon: Clock },
+          { label: 'Accounts Payable', value: stats.accountsPayable, iconBg: 'bg-red-50', iconColor: 'text-red-500', Icon: CreditCard },
+          { label: 'Unread AI Insights', value: null, display: `${insights.length} alerts`, iconBg: 'bg-purple-50', iconColor: 'text-purple-600', Icon: Activity },
+        ].map(s => (
+          <div key={s.label} className="card p-3 sm:p-4 flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl ${s.iconBg} flex items-center justify-center flex-shrink-0`}>
+              <s.Icon size={16} className={s.iconColor} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-slate-500 truncate">{s.label}</p>
+              {loading && s.value !== null ? (
+                <div className="skeleton h-5 w-28 rounded mt-1" />
+              ) : (
+                <p className="font-bold text-slate-900 text-sm truncate">
+                  {s.display || formatCurrency(s.value!, currency)}
+                </p>
+              )}
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-slate-500">Accounts Receivable</p>
-            {loading ? <div className="skeleton h-5 w-28 rounded mt-1" /> : <p className="font-bold text-slate-900">{formatCurrency(stats.accountsReceivable, currency)}</p>}
-          </div>
-        </div>
-        <div className="card p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
-            <CreditCard size={18} className="text-red-500" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Accounts Payable</p>
-            {loading ? <div className="skeleton h-5 w-28 rounded mt-1" /> : <p className="font-bold text-slate-900">{formatCurrency(stats.accountsPayable, currency)}</p>}
-          </div>
-        </div>
-        <div className="card p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center">
-            <Activity size={18} className="text-purple-600" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">Unread AI Insights</p>
-            <p className="font-bold text-slate-900">{insights.length} alerts</p>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-3 gap-6">
-        <div className="card p-5 col-span-2">
-          <h3 className="font-semibold text-slate-900 mb-1">Revenue vs Expenses</h3>
+      {/* ── Charts ────────────────────────────────────────────────────────────── */}
+      {/* FIX: grid-cols-3 with col-span-2 breaks on mobile → stack vertically */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+        <div className="card p-4 sm:p-5 lg:col-span-2">
+          <h3 className="font-semibold text-slate-900 mb-0.5 text-sm sm:text-base">Revenue vs Expenses</h3>
           <p className="text-xs text-slate-500 mb-4">From posted journal entries</p>
           {revenueData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-48 text-slate-400 gap-2">
+            <div className="flex flex-col items-center justify-center h-40 sm:h-48 text-slate-400 gap-2">
               <TrendingUp size={28} className="opacity-30" />
-              <p className="text-sm text-center">No posted entries yet — post journal entries to see your chart</p>
+              <p className="text-sm text-center">Post journal entries to see chart</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={180}>
               <AreaChart data={revenueData}>
                 <defs>
                   <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
@@ -251,8 +279,8 @@ const generateInsights = async () => {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
+                <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}K`} width={36} />
                 <Tooltip formatter={(v: number) => formatCurrency(v, currency)} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
                 <Area type="monotone" dataKey="revenue" stroke="#0ea5e9" strokeWidth={2} fill="url(#revGrad)" name="Revenue" />
                 <Area type="monotone" dataKey="expenses" stroke="#ef4444" strokeWidth={2} fill="url(#expGrad)" name="Expenses" />
@@ -261,18 +289,18 @@ const generateInsights = async () => {
           )}
         </div>
 
-        <div className="card p-5">
-          <h3 className="font-semibold text-slate-900 mb-1">Expense Breakdown</h3>
+        <div className="card p-4 sm:p-5">
+          <h3 className="font-semibold text-slate-900 mb-0.5 text-sm sm:text-base">Expense Breakdown</h3>
           <p className="text-xs text-slate-500 mb-3">By account balance</p>
           {expenseBreakdown.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-2">
+            <div className="flex flex-col items-center justify-center h-32 text-slate-400 gap-2">
               <p className="text-xs text-center">Post expenses to see breakdown</p>
             </div>
           ) : (
             <>
-              <ResponsiveContainer width="100%" height={140}>
+              <ResponsiveContainer width="100%" height={130}>
                 <PieChart>
-                  <Pie data={expenseBreakdown} cx="50%" cy="50%" innerRadius={40} outerRadius={65} dataKey="value" strokeWidth={2} stroke="#fff">
+                  <Pie data={expenseBreakdown} cx="50%" cy="50%" innerRadius={36} outerRadius={58} dataKey="value" strokeWidth={2} stroke="#fff">
                     {expenseBreakdown.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
                   <Tooltip formatter={(v: number) => formatCurrency(v, currency)} contentStyle={{ borderRadius: 10, fontSize: 12 }} />
@@ -280,12 +308,12 @@ const generateInsights = async () => {
               </ResponsiveContainer>
               <div className="space-y-1.5 mt-2">
                 {expenseBreakdown.slice(0, 4).map(item => (
-                  <div key={item.name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
+                  <div key={item.name} className="flex items-center justify-between text-xs gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0">
                       <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: item.color }} />
-                      <span className="text-slate-600 truncate max-w-20">{item.name}</span>
+                      <span className="text-slate-600 truncate">{item.name}</span>
                     </div>
-                    <span className="font-medium text-slate-900">{formatCurrency(item.value, currency)}</span>
+                    <span className="font-medium text-slate-900 flex-shrink-0">{formatCompact(item.value, currency)}</span>
                   </div>
                 ))}
               </div>
@@ -294,14 +322,15 @@ const generateInsights = async () => {
         </div>
       </div>
 
-      {/* AI Insights + Recent Transactions */}
-      <div className="grid grid-cols-2 gap-6">
-        <div className="card p-5">
-          <div className="flex items-center gap-2 mb-4">
+      {/* ── AI Insights + Recent Transactions ─────────────────────────────────── */}
+      {/* FIX: grid-cols-2 on mobile puts two narrow panels side by side → stack */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <div className="card p-4 sm:p-5">
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
             <div className="w-6 h-6 rounded-lg bg-purple-100 flex items-center justify-center">
               <Sparkles size={13} className="text-purple-600" />
             </div>
-            <h3 className="font-semibold text-slate-900">AI Insights</h3>
+            <h3 className="font-semibold text-slate-900 text-sm sm:text-base">AI Insights</h3>
             {insights.length > 0 && <span className="ai-badge">{insights.length} new</span>}
             <button
               onClick={generateInsights}
@@ -317,7 +346,7 @@ const generateInsights = async () => {
               <Lightbulb size={28} className="opacity-30" />
               <div className="text-center">
                 <p className="text-sm font-medium text-slate-500">No insights yet</p>
-                <p className="text-xs mt-1">Click Generate to get AI-powered financial insights</p>
+                <p className="text-xs mt-1">Click Generate for AI-powered financial insights</p>
               </div>
             </div>
           ) : (
@@ -329,7 +358,7 @@ const generateInsights = async () => {
                   insight.severity === 'critical' ? 'bg-red-50 border-red-200' :
                   'bg-blue-50 border-blue-200'
                 }`}>
-                  <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-slate-500" />
+                  <AlertTriangle size={15} className="flex-shrink-0 mt-0.5 text-slate-500" />
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-900">{insight.title}</p>
                     <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">{insight.description}</p>
@@ -340,9 +369,9 @@ const generateInsights = async () => {
           )}
         </div>
 
-        <div className="card p-5">
+        <div className="card p-4 sm:p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-900">Recent Transactions</h3>
+            <h3 className="font-semibold text-slate-900 text-sm sm:text-base">Recent Transactions</h3>
             <a href="/dashboard/transactions" className="btn-ghost text-brand-600 text-xs">
               View all <ChevronRight size={13} />
             </a>
@@ -353,21 +382,21 @@ const generateInsights = async () => {
             <div className="flex flex-col items-center justify-center py-8 text-slate-400 gap-2">
               <CheckCircle2 size={28} className="opacity-30" />
               <p className="text-sm">No transactions yet</p>
-              <p className="text-xs">Create your first invoice or bill to get started</p>
+              <p className="text-xs text-center">Create your first invoice or bill to get started</p>
             </div>
           ) : (
             <div className="space-y-3">
               {recentTransactions.map(tx => (
-                <div key={tx.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                  <div className="min-w-0">
+                <div key={tx.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0 gap-3">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-slate-900 truncate">{(tx.contact as any)?.name || tx.number}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{tx.number} · {formatDate(tx.date)}</p>
+                    <p className="text-xs text-slate-400 mt-0.5 truncate">{tx.number} · {formatDate(tx.date)}</p>
                   </div>
-                  <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-4">
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <span className={`text-sm font-semibold ${['bill','expense'].includes(tx.type) ? 'text-red-500' : 'text-slate-900'}`}>
-                      {['bill','expense'].includes(tx.type) ? '-' : '+'}{formatCurrency(tx.total, currency)}
+                      {['bill','expense'].includes(tx.type) ? '-' : '+'}{formatCompact(tx.total, currency)}
                     </span>
-                    <span className={`badge ${
+                    <span className={`badge text-xs ${
                       tx.status === 'paid' ? 'bg-green-100 text-green-700' :
                       tx.status === 'overdue' ? 'bg-red-100 text-red-700' :
                       tx.status === 'partial' ? 'bg-blue-100 text-blue-700' :
@@ -382,6 +411,7 @@ const generateInsights = async () => {
           )}
         </div>
       </div>
+
     </div>
   )
 }
