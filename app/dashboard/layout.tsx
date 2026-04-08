@@ -10,31 +10,38 @@ import {
   LayoutDashboard, BookOpen, FileText, Users, Package,
   CreditCard, PieChart, Settings, ChevronLeft, ChevronRight,
   Bell, Search, LogOut, Building2, BarChart3, Wallet,
-  Receipt, ShoppingCart, Calculator, Database, HelpCircle
+  Receipt, ShoppingCart, Calculator
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-const NAV_ITEMS = [
-  { key: 'dashboard', label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { key: 'accounting', label: 'Accounting', href: '/dashboard/accounting', icon: BookOpen },
-  { key: 'transactions', label: 'Transactions', href: '/dashboard/transactions', icon: Receipt },
-  { key: 'contacts', label: 'Contacts', href: '/dashboard/contacts', icon: Users },
-  { key: 'inventory', label: 'Inventory', href: '/dashboard/inventory', icon: Package },
-  { key: 'pos', label: 'POS', href: '/dashboard/pos', icon: ShoppingCart },
-  { key: 'payroll', label: 'Payroll', href: '/dashboard/payroll', icon: Wallet },
-  { key: 'tax', label: 'Tax & Compliance', href: '/dashboard/tax', icon: Calculator },
-  { key: 'banking', label: 'Banking', href: '/dashboard/banking', icon: CreditCard },
-  { key: 'budgeting', label: 'Budgets', href: '/dashboard/budgeting', icon: PieChart },
-  { key: 'analytics', label: 'Analytics', href: '/dashboard/analytics', icon: BarChart3 },
-  { key: 'reports', label: 'Reports', href: '/dashboard/reports', icon: FileText },
-  { key: 'settings', label: 'Settings', href: '/dashboard/settings', icon: Settings },
+// ── Every possible nav item ──────────────────────────────────────────────────
+// `module` = the key in organization.settings.enabled_modules that gates this item
+// `module: null` = always visible regardless of module toggles
+const ALL_NAV_ITEMS = [
+  { key: 'dashboard',     label: 'Dashboard',       href: '/dashboard',             icon: LayoutDashboard, module: null },
+  { key: 'accounting',    label: 'Accounting',       href: '/dashboard/accounting',  icon: BookOpen,        module: null },       // required module
+  { key: 'transactions',  label: 'Transactions',     href: '/dashboard/transactions',icon: Receipt,         module: null },       // core, always on
+  { key: 'contacts',      label: 'Contacts',         href: '/dashboard/contacts',    icon: Users,           module: null },       // core, always on
+  { key: 'inventory',     label: 'Inventory',        href: '/dashboard/inventory',   icon: Package,         module: 'inventory' },
+  { key: 'pos',           label: 'POS',              href: '/dashboard/pos',         icon: ShoppingCart,    module: 'pos' },
+  { key: 'payroll',       label: 'Payroll',          href: '/dashboard/payroll',     icon: Wallet,          module: 'payroll' },
+  { key: 'tax',           label: 'Tax & Compliance', href: '/dashboard/tax',         icon: Calculator,      module: 'tax' },
+  { key: 'banking',       label: 'Banking',          href: '/dashboard/banking',     icon: CreditCard,      module: 'banking' },
+  { key: 'budgeting',     label: 'Budgets',          href: '/dashboard/budgeting',   icon: PieChart,        module: 'budgeting' },
+  { key: 'analytics',     label: 'Analytics',        href: '/dashboard/analytics',   icon: BarChart3,       module: 'analytics' },
+  { key: 'reports',       label: 'Reports',          href: '/dashboard/reports',     icon: FileText,        module: null },       // always visible
+  { key: 'settings',      label: 'Settings',         href: '/dashboard/settings',    icon: Settings,        module: null },       // always visible
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
+  const router   = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
-  const { organization, profile, sidebarOpen, unreadInsights, setSidebarOpen, setOrganization, setProfile } = useAppStore()
+  const {
+    organization, profile,
+    sidebarOpen, unreadInsights,
+    setSidebarOpen, setOrganization, setProfile
+  } = useAppStore()
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -80,26 +87,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-  const activeKey = NAV_ITEMS.find(n => pathname === n.href || pathname.startsWith(n.href + '/'))?.key || 'dashboard'
+  // ── Filter nav items based on enabled modules ───────────────────────────
+  // Read which modules the user has turned on in Settings → Modules tab.
+  // Falls back to showing everything if the settings key doesn't exist yet.
+  const enabledModules: string[] =
+    (organization?.settings as any)?.enabled_modules ||
+    ['accounting','tax','payroll','inventory','banking','analytics','budgeting','pos']
+
+  const visibleNavItems = ALL_NAV_ITEMS.filter(item => {
+    if (item.module === null) return true          // always-on items
+    return enabledModules.includes(item.module)    // toggled items
+  })
+
+  const activeKey =
+    visibleNavItems.find(n => pathname === n.href || pathname.startsWith(n.href + '/'))?.key
+    || 'dashboard'
 
   return (
     <div className="min-h-screen flex bg-surface-50">
-      {/* Sidebar */}
+      {/* ── Sidebar ── */}
       <aside className={cn(
         'flex flex-col bg-white border-r border-slate-200 transition-all duration-300 ease-in-out flex-shrink-0 relative z-20',
         sidebarOpen ? 'w-60' : 'w-16'
       )}>
         {/* Logo */}
-        <div className={cn('flex items-center gap-3 px-4 py-5 border-b border-slate-100', !sidebarOpen && 'justify-center px-2')}>
+        <div className={cn(
+          'flex items-center gap-3 px-4 py-5 border-b border-slate-100',
+          !sidebarOpen && 'justify-center px-2'
+        )}>
           <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center flex-shrink-0">
             <BarChart3 size={16} className="text-white" />
           </div>
           {sidebarOpen && <span className="font-semibold text-slate-900 text-base">FinAI</span>}
         </div>
 
-        {/* Nav */}
+        {/* Nav — only shows enabled modules */}
         <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-          {NAV_ITEMS.map(item => {
+          {visibleNavItems.map(item => {
             const Icon = item.icon
             const isActive = item.key === activeKey
             return (
@@ -120,7 +144,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        {/* Bottom */}
+        {/* User + sign-out */}
         <div className={cn('p-3 border-t border-slate-100', !sidebarOpen && 'flex flex-col items-center gap-2')}>
           {sidebarOpen ? (
             <div className="flex items-center gap-3 px-2 py-2">
@@ -142,7 +166,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           )}
         </div>
 
-        {/* Toggle button */}
+        {/* Collapse toggle */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="absolute -right-3 top-16 w-6 h-6 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 transition-colors shadow-sm"
@@ -151,7 +175,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </button>
       </aside>
 
-      {/* Main */}
+      {/* ── Main ── */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Topbar */}
         <header className="h-14 bg-white border-b border-slate-200 flex items-center px-6 gap-4 flex-shrink-0">
@@ -182,7 +206,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
           {children}
         </main>
