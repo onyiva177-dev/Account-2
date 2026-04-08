@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -8,15 +8,13 @@ import toast from 'react-hot-toast'
 import {
   TrendingUp, TrendingDown, DollarSign, CreditCard,
   AlertTriangle, CheckCircle2, Activity, RefreshCw,
-  Sparkles, Clock, ChevronRight, Lightbulb
+  Sparkles, Clock, ChevronRight, Lightbulb, AlertCircle
 } from 'lucide-react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts'
 
-// ─── Compact number formatter for mobile KPI cards ──────────────────────────
-// "KES 33,000.00" overflows a 2-col mobile card → use "KES 33K" on small screens
 function formatCompact(amount: number, currency: string): string {
   const abs = Math.abs(amount)
   const sign = amount < 0 ? '-' : ''
@@ -35,21 +33,72 @@ export default function DashboardPage() {
     totalRevenue: 0, totalExpenses: 0, netProfit: 0,
     cashBalance: 0, accountsReceivable: 0, accountsPayable: 0,
   })
-  const [revenueData, setRevenueData] = useState<any[]>([])
-  const [expenseBreakdown, setExpenseBreakdown] = useState<any[]>([])
+  const [revenueData, setRevenueData]             = useState<any[]>([])
+  const [expenseBreakdown, setExpenseBreakdown]   = useState<any[]>([])
   const [recentTransactions, setRecentTransactions] = useState<any[]>([])
-  const [insights, setInsights] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [insights, setInsights]                   = useState<any[]>([])
+  const [loading, setLoading]                     = useState(true)
+  const [recalculating, setRecalculating]         = useState(false)
   const [generatingInsights, setGeneratingInsights] = useState(false)
+  const [balanceStale, setBalanceStale]           = useState(false)
 
-  useEffect(() => {
+  // ── CORE FIX: recalculate account balances from journal_lines ─────────────
+  // When transactions are deleted directly from the DB the trigger doesn't fire,
+  // leaving accounts.balance stale.  This function does a fresh recalculation
+  // and updates every account row before the dashboard reads the values.
+  const recalculateBalances = useCallback(async () => {
     if (!organization) return
-    loadAll()
+    setRecalculating(true)
+    try {
+      // Fetch all posted journal_lines for this org
+      const { data: lines } = await supabase
+        .from('journal_lines')
+        .select('account_id, debit, credit, journal_entry:journal_entries!inner(status, organization_id)')
+        .eq('journal_entry.organization_id', organization.id)
+        .eq('journal_entry.status', 'posted')
+
+      if (!lines) { setRecalculating(false); return }
+
+      // Aggregate: balance = SUM(debit) - SUM(credit) per account
+      const balMap: Record<string, number> = {}
+      for (const l of lines) {
+        balMap[l.account_id] = (balMap[l.account_id] || 0) + l.debit - l.credit
+      }
+
+      // Fetch all accounts for this org to get every id (including zero-balance ones)
+      const { data: allAccounts } = await supabase
+        .from('accounts')
+        .select('id')
+        .eq('organization_id', organization.id)
+
+      if (!allAccounts) { setRecalculating(false); return }
+
+      // Batch-update every account balance
+      await Promise.all(
+        allAccounts.map(a =>
+          supabase
+            .from('accounts')
+            .update({ balance: balMap[a.id] ?? 0 })
+            .eq('id', a.id)
+        )
+      )
+
+      setBalanceStale(false)
+      toast.success('Balances recalculated from journal entries')
+    } catch (e: any) {
+      toast.error('Recalculate failed: ' + e.message)
+    }
+    setRecalculating(false)
   }, [organization])
 
-  const loadAll = async () => {
+  const loadAll = useCallback(async (withRecalc = false) => {
+    if (!organization) return
     setLoading(true)
-    const orgId = organization!.id
+
+    // Optionally recalculate before loading
+    if (withRecalc) await recalculateBalances()
+
+    const orgId = organization.id
 
     const { data: accounts } = await supabase
       .from('accounts')
@@ -58,12 +107,13 @@ export default function DashboardPage() {
       .eq('is_active', true)
 
     if (accounts) {
-      const revenue = accounts.filter((a: any) => a.account_type?.category === 'revenue').reduce((s: number, a: any) => s + Math.abs(a.balance), 0)
+      const revenue  = accounts.filter((a: any) => a.account_type?.category === 'revenue').reduce((s: number, a: any) => s + Math.abs(a.balance), 0)
       const expenses = accounts.filter((a: any) => a.account_type?.category === 'expense').reduce((s: number, a: any) => s + Math.abs(a.balance), 0)
-      const cash = accounts.filter((a: any) => ['1000', '1010'].includes(a.code)).reduce((s: number, a: any) => s + a.balance, 0)
-      const bankBal = accounts.filter((a: any) => a.code?.startsWith('11')).reduce((s: number, a: any) => s + a.balance, 0)
-      const ar = accounts.find((a: any) => a.code === '1200')?.balance || 0
-      const ap = accounts.find((a: any) => a.code === '2000')?.balance || 0
+      // Cash: code 1000/1010 + any bank account (11xx)
+      const cash     = accounts.filter((a: any) => ['1000', '1010'].includes(a.code)).reduce((s: number, a: any) => s + a.balance, 0)
+      const bankBal  = accounts.filter((a: any) => a.code?.startsWith('11')).reduce((s: number, a: any) => s + a.balance, 0)
+      const ar       = accounts.find((a: any) => a.code === '1200')?.balance || 0
+      const ap       = accounts.find((a: any) => a.code === '2000')?.balance || 0
 
       setStats({
         totalRevenue: revenue,
@@ -121,7 +171,21 @@ export default function DashboardPage() {
     setInsights(aiInsights || [])
 
     setLoading(false)
-  }
+  }, [organization, recalculateBalances])
+
+  useEffect(() => {
+    if (!organization) return
+    loadAll()
+  }, [organization])
+
+  // ── Detect potential stale balance (simple heuristic) ─────────────────────
+  // If cash & bank balance > 0 but revenue+expenses are both 0,
+  // the balance column may be stale from direct DB edits.
+  useEffect(() => {
+    if (!loading && stats.cashBalance > 0 && stats.totalRevenue === 0 && stats.totalExpenses === 0) {
+      setBalanceStale(true)
+    }
+  }, [loading, stats])
 
   const generateInsights = async () => {
     if (!organization) return
@@ -133,14 +197,10 @@ export default function DashboardPage() {
         body: JSON.stringify({ stats })
       })
       const data = await response.json()
-      if (data.error) {
-        toast.error('AI error: ' + data.error.message || data.error)
-        setGeneratingInsights(false)
-        return
-      }
+      if (data.error) { toast.error('AI error: ' + (data.error.message || data.error)); setGeneratingInsights(false); return }
       await supabase.from('ai_insights').insert(
         data.insights.map((i: any) => ({
-          organization_id: organization!.id,
+          organization_id: organization.id,
           type: i.type || 'suggestion',
           title: i.title,
           description: i.description,
@@ -150,9 +210,7 @@ export default function DashboardPage() {
       )
       toast.success('AI insights generated!')
       loadAll()
-    } catch (e: any) {
-      toast.error('Failed: ' + e.message)
-    }
+    } catch (e: any) { toast.error('Failed: ' + e.message) }
     setGeneratingInsights(false)
   }
 
@@ -176,50 +234,64 @@ export default function DashboardPage() {
             {new Date().toLocaleDateString('en-KE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
         </div>
-        <button onClick={loadAll} className="btn-secondary flex-shrink-0 text-xs sm:text-sm">
-          <RefreshCw size={14} />
-          <span className="hidden sm:inline">Refresh</span>
+        {/* Refresh now recalculates first, then reloads */}
+        <button
+          onClick={() => loadAll(true)}
+          disabled={loading || recalculating}
+          className="btn-secondary flex-shrink-0 text-xs sm:text-sm"
+        >
+          <RefreshCw size={14} className={(loading || recalculating) ? 'animate-spin' : ''} />
+          <span className="hidden sm:inline">{recalculating ? 'Recalculating…' : 'Refresh'}</span>
         </button>
       </div>
 
-      {/* ── KPI Cards ──────────────────────────────────────────────────────── */}
-      {/* FIX: text-2xl overflows 2-col mobile cards.
-          Solution: use compact format (e.g. "KES 33K") on mobile,
-          full format on sm+ screens. Font size also scales down. */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      {/* ── STALE BALANCE WARNING ─────────────────────────────────────────── */}
+      {balanceStale && (
+        <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+          <AlertCircle size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800">Account balances may be out of sync</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              This can happen if transactions were deleted directly from the database.
+              Click Refresh to recalculate all balances from posted journal entries.
+            </p>
+          </div>
+          <button
+            onClick={() => loadAll(true)}
+            disabled={recalculating}
+            className="btn-secondary text-xs flex-shrink-0"
+          >
+            <RefreshCw size={12} className={recalculating ? 'animate-spin' : ''} />
+            Fix now
+          </button>
+        </div>
+      )}
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {[
-          { title: 'Revenue', value: stats.totalRevenue, icon: TrendingUp, sub: 'All revenue accounts', iconBg: 'bg-green-50', iconColor: 'text-green-600' },
-          { title: 'Expenses', value: stats.totalExpenses, icon: TrendingDown, sub: 'All expense accounts', iconBg: 'bg-red-50', iconColor: 'text-red-500' },
-          { title: 'Net Profit', value: stats.netProfit, icon: DollarSign, sub: 'Revenue minus expenses', iconBg: 'bg-brand-50', iconColor: 'text-brand-600' },
-          { title: 'Cash & Bank', value: stats.cashBalance, icon: CreditCard, sub: 'Cash + bank balances', iconBg: 'bg-purple-50', iconColor: 'text-purple-600' },
+          { title: 'Revenue',     value: stats.totalRevenue,  icon: TrendingUp,  sub: 'All revenue accounts',    iconBg: 'bg-green-50',  iconColor: 'text-green-600' },
+          { title: 'Expenses',    value: stats.totalExpenses, icon: TrendingDown, sub: 'All expense accounts',   iconBg: 'bg-red-50',    iconColor: 'text-red-500' },
+          { title: 'Net Profit',  value: stats.netProfit,     icon: DollarSign,  sub: 'Revenue minus expenses',  iconBg: 'bg-brand-50',  iconColor: 'text-brand-600' },
+          { title: 'Cash & Bank', value: stats.cashBalance,   icon: CreditCard,  sub: 'Cash + bank balances',    iconBg: 'bg-purple-50', iconColor: 'text-purple-600' },
         ].map(s => (
           <div key={s.title} className="card p-3 sm:p-5 flex flex-col gap-2 sm:gap-3">
             <div className="flex items-center justify-between">
-              {/* Shorten title on mobile */}
               <p className="text-xs sm:text-sm text-slate-500 font-medium leading-tight">{s.title}</p>
               <div className={`w-7 h-7 sm:w-9 sm:h-9 rounded-xl ${s.iconBg} flex items-center justify-center flex-shrink-0`}>
-                <s.icon size={14} className={`sm:w-[18px] sm:h-[18px] ${s.iconColor}`} />
+                <s.icon size={14} className={`sm:hidden ${s.iconColor}`} />
+                <s.icon size={18} className={`hidden sm:block ${s.iconColor}`} />
               </div>
             </div>
             <div>
-              {loading ? (
-                <div className="skeleton h-6 sm:h-7 w-full rounded mt-1" />
-              ) : (
+              {loading ? <div className="skeleton h-6 sm:h-7 w-full rounded mt-1" /> : (
                 <>
-                  {/* Mobile: compact (e.g. KES 33K) | Desktop: full */}
-                  <p className={`font-bold tracking-tight leading-none ${
-                    s.value < 0 ? 'text-red-500' : 'text-slate-900'
-                  }`}>
-                    {/* Compact value shown on mobile, hidden on sm+ */}
-                    <span className="text-lg sm:hidden">
-                      {s.value < 0 && <span className="text-red-500">-</span>}
-                      {formatCompact(Math.abs(s.value), currency)}
-                    </span>
-                    {/* Full value hidden on mobile, shown on sm+ */}
-                    <span className="hidden sm:inline text-2xl">
-                      {formatCurrency(s.value, currency)}
-                    </span>
-                  </p>
+                  <span className={`text-lg sm:hidden font-bold tracking-tight ${s.value < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                    {formatCompact(s.value, currency)}
+                  </span>
+                  <span className={`hidden sm:block text-2xl font-bold tracking-tight ${s.value < 0 ? 'text-red-500' : 'text-slate-900'}`}>
+                    {formatCurrency(s.value, currency)}
+                  </span>
                 </>
               )}
               <p className="text-xs text-slate-400 mt-1 leading-tight hidden sm:block">{s.sub}</p>
@@ -228,13 +300,12 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* ── Secondary stats ──────────────────────────────────────────────────── */}
-      {/* FIX: grid-cols-3 is too cramped on mobile → scroll horizontally or stack */}
+      {/* Secondary stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         {[
           { label: 'Accounts Receivable', value: stats.accountsReceivable, iconBg: 'bg-amber-50', iconColor: 'text-amber-600', Icon: Clock },
-          { label: 'Accounts Payable', value: stats.accountsPayable, iconBg: 'bg-red-50', iconColor: 'text-red-500', Icon: CreditCard },
-          { label: 'Unread AI Insights', value: null, display: `${insights.length} alerts`, iconBg: 'bg-purple-50', iconColor: 'text-purple-600', Icon: Activity },
+          { label: 'Accounts Payable',    value: stats.accountsPayable,    iconBg: 'bg-red-50',   iconColor: 'text-red-500',   Icon: CreditCard },
+          { label: 'Unread AI Insights',  value: null, display: `${insights.length} alerts`, iconBg: 'bg-purple-50', iconColor: 'text-purple-600', Icon: Activity },
         ].map(s => (
           <div key={s.label} className="card p-3 sm:p-4 flex items-center gap-3">
             <div className={`w-9 h-9 rounded-xl ${s.iconBg} flex items-center justify-center flex-shrink-0`}>
@@ -242,20 +313,16 @@ export default function DashboardPage() {
             </div>
             <div className="min-w-0">
               <p className="text-xs text-slate-500 truncate">{s.label}</p>
-              {loading && s.value !== null ? (
-                <div className="skeleton h-5 w-28 rounded mt-1" />
-              ) : (
-                <p className="font-bold text-slate-900 text-sm truncate">
-                  {s.display || formatCurrency(s.value!, currency)}
-                </p>
-              )}
+              {loading && s.value !== null
+                ? <div className="skeleton h-5 w-28 rounded mt-1" />
+                : <p className="font-bold text-slate-900 text-sm truncate">{s.display || formatCurrency(s.value!, currency)}</p>
+              }
             </div>
           </div>
         ))}
       </div>
 
-      {/* ── Charts ────────────────────────────────────────────────────────────── */}
-      {/* FIX: grid-cols-3 with col-span-2 breaks on mobile → stack vertically */}
+      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="card p-4 sm:p-5 lg:col-span-2">
           <h3 className="font-semibold text-slate-900 mb-0.5 text-sm sm:text-base">Revenue vs Expenses</h3>
@@ -282,7 +349,7 @@ export default function DashboardPage() {
                 <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={v => `${(v/1000).toFixed(0)}K`} width={36} />
                 <Tooltip formatter={(v: number) => formatCurrency(v, currency)} contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }} />
-                <Area type="monotone" dataKey="revenue" stroke="#0ea5e9" strokeWidth={2} fill="url(#revGrad)" name="Revenue" />
+                <Area type="monotone" dataKey="revenue"  stroke="#0ea5e9" strokeWidth={2} fill="url(#revGrad)" name="Revenue" />
                 <Area type="monotone" dataKey="expenses" stroke="#ef4444" strokeWidth={2} fill="url(#expGrad)" name="Expenses" />
               </AreaChart>
             </ResponsiveContainer>
@@ -322,8 +389,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── AI Insights + Recent Transactions ─────────────────────────────────── */}
-      {/* FIX: grid-cols-2 on mobile puts two narrow panels side by side → stack */}
+      {/* AI Insights + Recent Transactions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         <div className="card p-4 sm:p-5">
           <div className="flex items-center gap-2 mb-4 flex-wrap">
@@ -332,13 +398,9 @@ export default function DashboardPage() {
             </div>
             <h3 className="font-semibold text-slate-900 text-sm sm:text-base">AI Insights</h3>
             {insights.length > 0 && <span className="ai-badge">{insights.length} new</span>}
-            <button
-              onClick={generateInsights}
-              disabled={generatingInsights}
-              className="btn-secondary text-xs ml-auto py-1 px-3"
-            >
+            <button onClick={generateInsights} disabled={generatingInsights} className="btn-secondary text-xs ml-auto py-1 px-3">
               <Sparkles size={12} />
-              {generatingInsights ? 'Analyzing...' : 'Generate'}
+              {generatingInsights ? 'Analyzing…' : 'Generate'}
             </button>
           </div>
           {insights.length === 0 ? (
@@ -355,8 +417,7 @@ export default function DashboardPage() {
                 <div key={insight.id} className={`flex gap-3 p-3 rounded-xl border ${
                   insight.severity === 'warning' ? 'bg-amber-50 border-amber-200' :
                   insight.severity === 'positive' ? 'bg-green-50 border-green-200' :
-                  insight.severity === 'critical' ? 'bg-red-50 border-red-200' :
-                  'bg-blue-50 border-blue-200'
+                  insight.severity === 'critical' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'
                 }`}>
                   <AlertTriangle size={15} className="flex-shrink-0 mt-0.5 text-slate-500" />
                   <div className="min-w-0">
@@ -401,9 +462,7 @@ export default function DashboardPage() {
                       tx.status === 'overdue' ? 'bg-red-100 text-red-700' :
                       tx.status === 'partial' ? 'bg-blue-100 text-blue-700' :
                       'bg-amber-100 text-amber-700'
-                    }`}>
-                      {tx.status}
-                    </span>
+                    }`}>{tx.status}</span>
                   </div>
                 </div>
               ))}
@@ -411,7 +470,6 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
-
     </div>
   )
 }
