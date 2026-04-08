@@ -30,7 +30,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   return (
     <button
       type="button"
-      onClick={() => onChange(!checked)}
+      onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
       className={`w-11 h-6 rounded-full relative transition-colors flex-shrink-0 ${checked ? 'bg-brand-600' : 'bg-slate-200'}`}
     >
       <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -346,7 +346,7 @@ export default function SettingsPage() {
                   className={`card p-4 flex items-center gap-3 transition-all ${
                     m.required ? 'opacity-75' : 'cursor-pointer hover:shadow-md'
                   } ${isEnabled ? 'ring-2 ring-brand-500' : ''}`}
-                  onClick={() => !m.required && toggleModule(m.key)}>
+                  >
                   <span className="text-2xl">{m.icon}</span>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-slate-900 text-sm flex items-center gap-2">
