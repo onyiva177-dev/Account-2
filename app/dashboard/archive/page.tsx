@@ -99,11 +99,16 @@ export default function ArchivePage() {
   const [loading,  setLoading]  = useState(false)
   const [tab,      setTab]      = useState<'deleted' | 'all' | 'log'>('deleted')
 
-  // Check whether an archive password is already set
+  // Check whether an archive password is already set + restore session unlock
   useEffect(() => {
     if (!organization) return
-    const pw = (organization.settings as any)?.archive_password
+    const pw = (organization.settings as any)?.archive_password_hash
     setHasPassword(!!pw)
+    // Restore unlocked state within the same browser session
+    // sessionStorage is cleared automatically when the tab is closed
+    if (pw && sessionStorage.getItem(`archive_unlocked_${organization.id}`) === '1') {
+      setUnlocked(true)
+    }
   }, [organization?.id])
 
   // ── Password helpers ──────────────────────────────────────────────────────
@@ -139,39 +144,30 @@ export default function ArchivePage() {
   }
 
   const handleUnlock = async () => {
-  if (!organization || !enteredPw.trim()) return;
-  setChecking(true);
-  setWrongPw(false);
-
-  const storedHash = (organization.settings as any)?.archive_password_hash;
-  if (!storedHash) {
-    setChecking(false);
-    return;
-  }
-
-  const enteredHash = await hashPassword(enteredPw);
-  if (enteredHash === storedHash) {
-    setUnlocked(true);
-    setWrongPw(false);
-    loadArchive();
-  } else {
-    setWrongPw(true);
-    // Log failed attempt to audit trail
-    try {
+    if (!organization || !enteredPw.trim()) return
+    setChecking(true)
+    setWrongPw(false)
+    const storedHash = (organization.settings as any)?.archive_password_hash
+    if (!storedHash) { setChecking(false); return }
+    const enteredHash = await hashPassword(enteredPw)
+    if (enteredHash === storedHash) {
+      sessionStorage.setItem(`archive_unlocked_${organization.id}`, '1')
+      setUnlocked(true)
+      setWrongPw(false)
+      loadArchive()
+    } else {
+      setWrongPw(true)
+      // Log failed attempt to audit trail
       await supabase.from('journal_audit_log').insert({
-        organization_id: organization.id,
+        organization_id:  organization.id,
         journal_entry_id: '00000000-0000-0000-0000-000000000000', // sentinel
-        action: 'archive_unlock_failed',
-        performed_by: profile?.id ?? null,
-        details: { attempted_at: new Date().toISOString() },
-      });
-    } catch (err) {
-      // silently ignore if insert fails (sentinel UUID may violate FK)
+        action:           'archive_unlock_failed',
+        performed_by:     profile?.id || null,
+        details:          { attempted_at: new Date().toISOString() },
+      }).catch(() => {}) // silently ignore if insert fails (sentinel UUID may violate FK)
     }
+    setChecking(false)
   }
-
-  setChecking(false);
-};
 
   // ── Load archive data ─────────────────────────────────────────────────────
   const loadArchive = async () => {
@@ -327,7 +323,7 @@ export default function ArchivePage() {
         <div className="flex items-center gap-2">
           <button onClick={exportCSV} className="btn-secondary text-xs"><Download size={13} />Export Log</button>
           <button onClick={() => { setShowChangePw(true) }} className="btn-secondary text-xs"><Key size={13} />Change Password</button>
-          <button onClick={() => setUnlocked(false)} className="btn-secondary text-xs"><Lock size={13} />Lock</button>
+          <button onClick={() => { sessionStorage.removeItem(`archive_unlocked_${organization?.id}`); setUnlocked(false) }} className="btn-secondary text-xs"><Lock size={13} />Lock</button>
         </div>
       </div>
 
