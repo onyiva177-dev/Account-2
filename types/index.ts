@@ -33,10 +33,12 @@ export interface Account {
   name: string
   balance: number
   currency: string
+  parent_id?: string | null          // ← NEW: self-referencing for sub-accounts
   account_type?: {
     category: string
     normal_balance: string
   }
+  children?: Account[]               // ← NEW: populated on the frontend only
 }
 
 export interface JournalEntry {
