@@ -157,7 +157,7 @@ function SubAccountModal({
             >
               <option value="">Select parent account…</option>
               {CATEGORY_ORDER.map(cat => {
-                const catParents = parentAccounts.filter(a => a.account_type?.category === cat)
+                const catParents = parentAccounts.filter(a => a.account_type?.some(t => t.category === cat))
                 if (!catParents.length) return null
                 return (
                   <optgroup key={cat} label={cat.charAt(0).toUpperCase() + cat.slice(1)}>
