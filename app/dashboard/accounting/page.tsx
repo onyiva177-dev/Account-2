@@ -235,14 +235,26 @@ export default function AccountingPage() {
   }, [organization, tab])
 
   const loadAccounts = async () => {
-    const { data } = await supabase
-      .from('accounts')
-      .select('id, organization_id, code, name, balance, currency, account_type_id, parent_id, is_active, account_type:account_types(category, normal_balance)')
-      .eq('organization_id', organization!.id)
-      .eq('is_active', true)
-      .order('code')
-    setAccounts(data || [])
-  }
+  const { data } = await supabase
+    .from('accounts')
+    .select(`
+      id,
+      organization_id,
+      code,
+      name,
+      balance,
+      currency,
+      account_type_id,
+      parent_id,
+      is_active,
+      account_type:account_types!inner(category, normal_balance)
+    `)
+    .eq('organization_id', organization!.id)
+    .eq('is_active', true)
+    .order('code')
+
+  setAccounts((data as Account[]) || [])
+}
 
   const loadData = async () => {
     setLoading(true)
