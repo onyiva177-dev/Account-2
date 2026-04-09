@@ -452,10 +452,13 @@ export default function AccountingPage() {
   const currency = organization?.base_currency || 'KES'
 
   // ── Trial Balance ─────────────────────────────────────────────────────────
-  const getDebit  = (a: Account) => (a.account_type?.normal_balance === 'debit'  && a.balance > 0) ? a.balance
-                                  : (a.account_type?.normal_balance !== 'debit'  && a.balance > 0) ? a.balance : 0
-  const getCredit = (a: Account) => (a.account_type?.normal_balance === 'credit' && a.balance < 0) ? Math.abs(a.balance)
-                                  : (a.account_type?.normal_balance === 'debit'  && a.balance < 0) ? Math.abs(a.balance) : 0
+  const getDebit = (a: Account) =>
+  (a.account_type?.some(t => t.normal_balance === 'debit') && a.balance > 0) ? a.balance
+  : (a.account_type?.some(t => t.normal_balance !== 'debit') && a.balance > 0) ? a.balance : 0
+
+const getCredit = (a: Account) =>
+  (a.account_type?.some(t => t.normal_balance === 'credit') && a.balance < 0) ? Math.abs(a.balance)
+  : (a.account_type?.some(t => t.normal_balance === 'debit') && a.balance < 0) ? Math.abs(a.balance) : 0
 
   const tbRows: { account: Account; indent: boolean; isGroupLabel: boolean }[] = []
   for (const p of parentAccounts.filter(a => a.balance !== 0 || hasChildren(a.id))) {
