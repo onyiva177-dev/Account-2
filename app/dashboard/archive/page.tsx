@@ -139,37 +139,39 @@ export default function ArchivePage() {
   }
 
   const handleUnlock = async () => {
-    if (!organization || !enteredPw.trim()) return
-    setChecking(true)
-    setWrongPw(false)
-    const storedHash = (organization.settings as any)?.archive_password_hash
-    if (!storedHash) { setChecking(false); return }
-    const enteredHash = await hashPassword(enteredPw)
-    if (enteredHash === storedHash) {
-      setUnlocked(true)
-      setWrongPw(false)
-      loadArchive()
-    } else {
-      setWrongPw(true)
-      // Log failed attempt to audit trail
+  if (!organization || !enteredPw.trim()) return;
+  setChecking(true);
+  setWrongPw(false);
+
+  const storedHash = (organization.settings as any)?.archive_password_hash;
+  if (!storedHash) {
+    setChecking(false);
+    return;
+  }
+
+  const enteredHash = await hashPassword(enteredPw);
+  if (enteredHash === storedHash) {
+    setUnlocked(true);
+    setWrongPw(false);
+    loadArchive();
+  } else {
+    setWrongPw(true);
+    // Log failed attempt to audit trail
+    try {
       await supabase.from('journal_audit_log').insert({
-        organization_id:  organization.id,
+        organization_id: organization.id,
         journal_entry_id: '00000000-0000-0000-0000-000000000000', // sentinel
-        action:           'archive_unlock_failed',
-        performed_by:     profile?.id || null,
-        details:          { attempted_at: new Date().toISOString() },
-      try {
-  await supabase.from('journal_audit_log').insert({
-    organization_id: organization.id,
-    journal_entry_id: '00000000-0000-0000-0000-000000000000', // sentinel
-    action: 'archive_unlock_failed',
-    performed_by: profile?.id ?? null,
-    details: { attempted_at: new Date().toISOString() },
-  });
-} catch (err) {
-  // silently ignore if insert fails (sentinel UUID may violate FK)
-}
-setChecking(false);
+        action: 'archive_unlock_failed',
+        performed_by: profile?.id ?? null,
+        details: { attempted_at: new Date().toISOString() },
+      });
+    } catch (err) {
+      // silently ignore if insert fails (sentinel UUID may violate FK)
+    }
+  }
+
+  setChecking(false);
+};
 
   // ── Load archive data ─────────────────────────────────────────────────────
   const loadArchive = async () => {
