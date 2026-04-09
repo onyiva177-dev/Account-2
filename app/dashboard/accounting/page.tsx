@@ -237,7 +237,7 @@ export default function AccountingPage() {
   const loadAccounts = async () => {
     const { data } = await supabase
       .from('accounts')
-      .select('*, account_type:account_types(category, normal_balance)')
+      .select('id, code, name, balance, currency, account_type_id, parent_id, is_active, account_type:account_types(category, normal_balance)')
       .eq('organization_id', organization!.id)
       .eq('is_active', true)
       .order('code')
@@ -820,15 +820,37 @@ export default function AccountingPage() {
                           </select>
                         </div>
                         <div className="col-span-3">
-                          {selectedAccount && kids.length > 0 ? (
+                          {!selectedAccount ? (
+                            // No account chosen yet
+                            <input className="input text-xs text-slate-300 cursor-not-allowed"
+                              placeholder="Select account first" disabled />
+                          ) : kids.length > 0 ? (
+                            // Account has sub-accounts — show picker
                             <SubAccountPicker
                               parentAccount={selectedAccount} children={kids}
                               value={line.sub_account_id || line.account_id}
                               onChange={v => updateLine(i, 'sub_account_id', v)}
                             />
                           ) : (
-                            <input className="input text-xs text-slate-500" placeholder="Narration (optional)"
-                              value={line.description} onChange={e => updateLine(i, 'description', e.target.value)} />
+                            // Account has NO sub-accounts yet — narration + inline create button
+                            <div className="flex gap-1 items-center">
+                              <input className="input text-xs flex-1"
+                                placeholder="Narration (optional)"
+                                value={line.description}
+                                onChange={e => updateLine(i, 'description', e.target.value)} />
+                              <button
+                                type="button"
+                                title={`Create sub-account under ${selectedAccount.name}`}
+                                className="flex-shrink-0 w-8 h-10 flex items-center justify-center rounded-xl border border-dashed border-brand-300 text-brand-500 hover:bg-brand-50 transition-colors"
+                                onClick={() => {
+                                  setSubModalParent(selectedAccount)
+                                  setEditSubAccount(null)
+                                  setShowSubModal(true)
+                                }}
+                              >
+                                <GitBranch size={11} />
+                              </button>
+                            </div>
                           )}
                         </div>
                         <div className="col-span-2">
@@ -855,8 +877,9 @@ export default function AccountingPage() {
               <div className="flex items-start gap-2 p-3 bg-brand-50 rounded-xl">
                 <GitBranch size={14} className="text-brand-600 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-brand-700">
-                  Accounts marked <strong>▸</strong> have sub-accounts. Select the parent first, then choose the specific sub-account.
-                  Create sub-accounts from <strong>Chart of Accounts → + button</strong> on any parent row.
+                  <strong>Sub-accounts:</strong> Accounts marked <strong>▸</strong> show a sub-account picker.
+                  If an account has none yet, click the <GitBranch size={10} className="inline" /> button beside the narration to create one instantly.
+                  After creating, the picker will appear automatically.
                 </p>
               </div>
             </div>
