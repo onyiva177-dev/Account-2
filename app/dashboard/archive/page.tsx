@@ -158,10 +158,18 @@ export default function ArchivePage() {
         action:           'archive_unlock_failed',
         performed_by:     profile?.id || null,
         details:          { attempted_at: new Date().toISOString() },
-      }).catch(() => {}) // silently ignore if insert fails (sentinel UUID may violate FK)
-    }
-    setChecking(false)
-  }
+      try {
+  await supabase.from('journal_audit_log').insert({
+    organization_id: organization.id,
+    journal_entry_id: '00000000-0000-0000-0000-000000000000', // sentinel
+    action: 'archive_unlock_failed',
+    performed_by: profile?.id ?? null,
+    details: { attempted_at: new Date().toISOString() },
+  });
+} catch (err) {
+  // silently ignore if insert fails (sentinel UUID may violate FK)
+}
+setChecking(false);
 
   // ── Load archive data ─────────────────────────────────────────────────────
   const loadArchive = async () => {
