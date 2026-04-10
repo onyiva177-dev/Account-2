@@ -103,9 +103,21 @@ export default function AccountingPage() {
   .eq('is_active', true)
   .order('code')
 
+type JournalLine = { debit?: number; credit?: number }
+
 const recalculated = (data || []).map(acc => {
-  const debitSum = acc.journal_lines?.reduce((s, l) => s + (l.debit || 0), 0) || 0
-  const creditSum = acc.journal_lines?.reduce((s, l) => s + (l.credit || 0), 0) || 0
+  const debitSum =
+    (acc.journal_lines as JournalLine[] | undefined)?.reduce(
+      (s: number, l: JournalLine) => s + (l.debit || 0),
+      0
+    ) || 0
+
+  const creditSum =
+    (acc.journal_lines as JournalLine[] | undefined)?.reduce(
+      (s: number, l: JournalLine) => s + (l.credit || 0),
+      0
+    ) || 0
+
   const balance = debitSum - creditSum
   return { ...acc, balance }
 })
