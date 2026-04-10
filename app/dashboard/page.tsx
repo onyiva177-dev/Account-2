@@ -93,12 +93,24 @@ export default function AccountingPage() {
   // ── Fetch accounts including parent_id ──────────────────────────────────
   const loadAccounts = async () => {
     const { data } = await supabase
-      .from('accounts')
-      .select('*, account_type:account_types(category, normal_balance)')
-      .eq('organization_id', organization!.id)
-      .eq('is_active', true)
-      .order('code')
-    setAccounts(data || [])
+  .from('accounts')
+  .select(`
+    *,
+    account_type:account_types(category, normal_balance),
+    journal_lines:journal_lines(debit, credit)
+  `)
+  .eq('organization_id', organization!.id)
+  .eq('is_active', true)
+  .order('code')
+
+const recalculated = (data || []).map(acc => {
+  const debitSum = acc.journal_lines?.reduce((s, l) => s + (l.debit || 0), 0) || 0
+  const creditSum = acc.journal_lines?.reduce((s, l) => s + (l.credit || 0), 0) || 0
+  const balance = debitSum - creditSum
+  return { ...acc, balance }
+})
+
+setAccounts(recalculated)
   }
 
   const loadData = async () => {
@@ -217,10 +229,15 @@ export default function AccountingPage() {
   //    (if a parent has children, its own direct balance is shown as "Unallocated")
   //  - Debit/Credit assignment based on normal_balance + sign of stored balance
 
-  const getDebit  = (a: Account) => a.balance > 0 && a.account_type?.normal_balance === 'debit'  ? a.balance
-                                  : a.balance > 0 && a.account_type?.normal_balance !== 'debit'   ? a.balance : 0
-  const getCredit = (a: Account) => a.balance < 0 && a.account_type?.normal_balance === 'credit' ? Math.abs(a.balance)
-                                  : a.balance < 0 && a.account_type?.normal_balance === 'debit'   ? Math.abs(a.balance) : 0
+  const getDebit = (a: Account) =>
+  a.balance > 0 && a.account_type?.normal_balance === 'debit'
+    ? a.balance
+    : 0
+
+const getCredit = (a: Account) =>
+  a.balance < 0 && a.account_type?.normal_balance === 'credit'
+    ? Math.abs(a.balance)
+    : 0
 
   // Build the TB row list in display order:
   // For each parent with children: show parent label (no amounts) then indented children
@@ -364,7 +381,7 @@ export default function AccountingPage() {
                         <td><span className="badge bg-slate-100 text-slate-600 capitalize">{account.account_type?.category}</span></td>
                         <td className="text-slate-500 capitalize text-xs">{account.account_type?.normal_balance}</td>
                         <td className={`text-right font-mono text-sm ${account.balance < 0 ? 'negative' : account.balance > 0 ? 'text-slate-900 font-semibold' : 'text-slate-400'}`}>
-                          {formatCurrency(account.balance, account.currency || currency)}
+                         {formatCurrency(account.balance ?? 0, account.currency || currency)}
                         </td>
                         <td><span className="dot-green" /></td>
                       </tr>
