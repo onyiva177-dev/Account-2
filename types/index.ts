@@ -37,7 +37,7 @@ export interface Account {
   account_type?: {
   category: string
   normal_balance: string
-}[]
+}
   children?: Account[]               // ← NEW: populated on the frontend only
 }
 
