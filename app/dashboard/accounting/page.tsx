@@ -157,7 +157,7 @@ function SubAccountModal({
             >
               <option value="">Select parent account…</option>
               {CATEGORY_ORDER.map(cat => {
-                const catParents = parentAccounts.filter(a => a.account_type?.some(t => t.category === cat))
+                const catParents = parentAccounts.filter(a => a.account_type?.category === cat)
                 if (!catParents.length) return null
                 return (
                   <optgroup key={cat} label={cat.charAt(0).toUpperCase() + cat.slice(1)}>
@@ -235,26 +235,14 @@ export default function AccountingPage() {
   }, [organization, tab])
 
   const loadAccounts = async () => {
-  const { data } = await supabase
-    .from('accounts')
-    .select(`
-      id,
-      organization_id,
-      code,
-      name,
-      balance,
-      currency,
-      account_type_id,
-      parent_id,
-      is_active,
-      account_type:account_types!inner(category, normal_balance)
-    `)
-    .eq('organization_id', organization!.id)
-    .eq('is_active', true)
-    .order('code')
-
-  setAccounts((data as Account[]) || [])
-}
+    const { data } = await supabase
+      .from('accounts')
+      .select('id, organization_id, code, name, balance, currency, account_type_id, parent_id, is_active, account_type:account_types(category, normal_balance)')
+      .eq('organization_id', organization!.id)
+      .eq('is_active', true)
+      .order('code')
+    setAccounts((data as any[] || []) as Account[])
+  }
 
   const loadData = async () => {
     setLoading(true)
@@ -266,7 +254,7 @@ export default function AccountingPage() {
         .eq('is_deleted', false)          // ← only show live entries
         .order('date', { ascending: false })
         .limit(50)
-      setEntries(data || [])
+      setEntries((data as any[] || []) as JournalEntry[])
     } else {
       await loadAccounts()
     }
@@ -452,13 +440,10 @@ export default function AccountingPage() {
   const currency = organization?.base_currency || 'KES'
 
   // ── Trial Balance ─────────────────────────────────────────────────────────
-  const getDebit = (a: Account) =>
-  (a.account_type?.some(t => t.normal_balance === 'debit') && a.balance > 0) ? a.balance
-  : (a.account_type?.some(t => t.normal_balance !== 'debit') && a.balance > 0) ? a.balance : 0
-
-const getCredit = (a: Account) =>
-  (a.account_type?.some(t => t.normal_balance === 'credit') && a.balance < 0) ? Math.abs(a.balance)
-  : (a.account_type?.some(t => t.normal_balance === 'debit') && a.balance < 0) ? Math.abs(a.balance) : 0
+  const getDebit  = (a: Account) => (a.account_type?.normal_balance === 'debit'  && a.balance > 0) ? a.balance
+                                  : (a.account_type?.normal_balance !== 'debit'  && a.balance > 0) ? a.balance : 0
+  const getCredit = (a: Account) => (a.account_type?.normal_balance === 'credit' && a.balance < 0) ? Math.abs(a.balance)
+                                  : (a.account_type?.normal_balance === 'debit'  && a.balance < 0) ? Math.abs(a.balance) : 0
 
   const tbRows: { account: Account; indent: boolean; isGroupLabel: boolean }[] = []
   for (const p of parentAccounts.filter(a => a.balance !== 0 || hasChildren(a.id))) {
@@ -893,7 +878,7 @@ const getCredit = (a: Account) =>
                 <GitBranch size={14} className="text-brand-600 mt-0.5 flex-shrink-0" />
                 <p className="text-xs text-brand-700">
                   <strong>Sub-accounts:</strong> Accounts marked <strong>▸</strong> show a sub-account picker.
-                  If an account has none yet, click the <GitBranch size={10} className="inline" /> button beside the narration to create one instantly.
+                  If an account has none yet, click the ⎇ icon beside the narration field to create one instantly.
                   After creating, the picker will appear automatically.
                 </p>
               </div>
