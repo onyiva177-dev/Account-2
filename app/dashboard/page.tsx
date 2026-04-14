@@ -84,8 +84,11 @@ export default function DashboardPage() {
       // Aggregate by category using the correct sign convention:
       // debit-normal (asset, expense): positive balance = Dr
       // credit-normal (liability, equity, revenue): negative balance = Cr → use Math.abs
-      const getVal = (a: any) =>
-        a.account_type?.normal_balance === 'credit' ? Math.abs(a.balance) : a.balance
+      const getVal = (a: Account) =>
+  a.account_type?.[0]?.normal_balance === 'credit'
+    ? Math.abs(a.balance)
+    : a.balance
+
 
 interface AccountType {
   category: string;
@@ -97,15 +100,16 @@ interface Account {
   code: string;
   name: string;
   balance: number;
-  account_type?: AccountType;
+  account_type?: AccountType[];   // <-- array
 }
 
+      
 const revenue = accounts
-  .filter((a: Account) => a.account_type?.category === 'revenue')
+  .filter((a: Account) => a.account_type?.[0]?.category === 'revenue')
   .reduce((s, a) => s + getVal(a), 0)
 
 const expenses = accounts
-  .filter((a: Account) => a.account_type?.category === 'expense')
+  .filter((a: Account) => a.account_type?.[0]?.category === 'expense')
   .reduce((s, a) => s + getVal(a), 0)
 
 
