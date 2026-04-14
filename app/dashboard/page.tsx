@@ -87,10 +87,27 @@ export default function DashboardPage() {
       const getVal = (a: any) =>
         a.account_type?.normal_balance === 'credit' ? Math.abs(a.balance) : a.balance
 
-      const revenue  = accounts.filter(a => a.account_type?.category === 'revenue')
-                               .reduce((s, a) => s + getVal(a), 0)
-      const expenses = accounts.filter(a => a.account_type?.category === 'expense')
-                               .reduce((s, a) => s + getVal(a), 0)
+interface AccountType {
+  category: string;
+  normal_balance: string;
+}
+
+interface Account {
+  id: string;
+  code: string;
+  name: string;
+  balance: number;
+  account_type?: AccountType;
+}
+
+const revenue = accounts
+  .filter((a: Account) => a.account_type?.category === 'revenue')
+  .reduce((s, a) => s + getVal(a), 0)
+
+const expenses = accounts
+  .filter((a: Account) => a.account_type?.category === 'expense')
+  .reduce((s, a) => s + getVal(a), 0)
+
 
       // Cash: code 1000/1010/petty cash
       const cash = accounts.filter(a => ['1000','1010'].includes(a.code))
