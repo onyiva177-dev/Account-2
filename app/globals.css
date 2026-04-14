@@ -10,11 +10,11 @@
   --bg-card: #161b22;
   --bg-card-2: #1c2128;
 
-  --border: rgba(255,255,255,0.06);
+  --border: rgba(255,255,255,0.08);
 
-  --text-primary: #e6edf3;
-  --text-secondary: #b3bac4;
-  --text-muted: #6e7681;
+  --text-primary: #f0f6fc;
+  --text-secondary: #c9d1d9;
+  --text-muted: #8b949e;
 
   --brand: #2f81f7;
   --brand-hover: #388bfd;
@@ -28,9 +28,7 @@
 /* ── BASE ─────────────────────────────────────────── */
 *,
 *::before,
-*::after {
-  box-sizing: border-box;
-}
+*::after { box-sizing: border-box; }
 
 body {
   margin: 0;
@@ -46,8 +44,63 @@ body {
 /* ── SCROLLBAR ─────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.15);
   border-radius: 4px;
+}
+
+/* ── SIDEBAR ───────────────────────────────────────── */
+.sidebar {
+  width: 240px;
+  min-height: 100vh;
+  background: linear-gradient(145deg, #161b22, #0d1117);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+}
+
+.sidebar .logo {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--brand);
+  padding: 0 20px 20px;
+}
+
+.sidebar nav {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.sidebar nav a:hover {
+  background: #21262d;
+  color: var(--text-primary);
+}
+
+.sidebar nav a.active {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(47,129,247,0.3);
+}
+
+.sidebar .footer {
+  padding: 20px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
 }
 
 /* ── CARD ─────────────────────────────────────────── */
@@ -61,13 +114,12 @@ body {
 
 .card:hover {
   transform: translateY(-3px);
-  border-color: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.12);
   box-shadow:
     0 10px 30px rgba(0,0,0,0.5),
     0 0 0 1px rgba(255,255,255,0.05);
 }
 
-/* ── CARD TEXT ────────────────────────────────────── */
 .card h3 {
   font-size: 15px;
   font-weight: 600;
@@ -81,7 +133,7 @@ body {
   margin-top: 4px;
 }
 
-/* ── ICON BOX (important for your UI) ─────────────── */
+/* ── ICON BOX ─────────────────────────────────────── */
 .icon-box {
   width: 44px;
   height: 44px;
@@ -89,12 +141,11 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-
   background: linear-gradient(145deg, #21262d, #161b22);
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
-/* ── GRID (for your cards layout) ─────────────────── */
+/* ── GRID ─────────────────────────────────────────── */
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -121,9 +172,11 @@ body {
   @apply btn;
   background: #21262d;
   border: 1px solid var(--border);
+  color: var(--text-secondary);
 }
 .btn-secondary:hover {
   background: #2d333b;
+  color: var(--text-primary);
 }
 
 /* ── INPUT ───────────────────────────────────────── */
@@ -159,6 +212,7 @@ body {
 
 .table tr:hover td {
   background: rgba(255,255,255,0.02);
+  color: var(--text-primary);
 }
 
 /* ── BADGES ─────────────────────────────────────── */
@@ -192,10 +246,7 @@ body {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-
-.animate-fade-up {
-  animation: fadeUp 0.3s ease;
-}
+.animate-fade-up { animation: fadeUp 0.3s ease; }
 
 /* ── MODAL ───────────────────────────────────────── */
 .modal-backdrop {
