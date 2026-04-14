@@ -133,16 +133,17 @@ const expenses = accounts
 
       // Expense breakdown pie
       setExpenseBreak(
-        accounts
-          .filter(a => a.account_type?.category === 'expense' && getVal(a) > 0)
-          .sort((a, b) => getVal(b) - getVal(a))
-          .slice(0, 6)
-          .map((a, i) => ({
-            name: a.name.replace(' Expense','').replace(' & Wages',''),
-            value: getVal(a),
-            color: ['#2f81f7','#bc8cff','#3fb950','#d29922','#f85149','#58a6ff'][i]
-          }))
-      )
+  accounts
+    .filter((a: Account) => a.account_type?.[0]?.category === 'expense' && getVal(a) > 0)
+    .sort((a, b) => getVal(b) - getVal(a))
+    .slice(0, 6)
+    .map((a, i) => ({
+      name: a.name.replace(' Expense', "").replace(' & Wages', ""),
+      value: getVal(a),
+      color: ['#2f81f7','#bc8cff','#3fb950','#d29922','#f85149','#58a6ff'][i]
+    }))
+)
+
     }
 
     // ── Monthly revenue vs expenses from journal_entries ─────────────────
