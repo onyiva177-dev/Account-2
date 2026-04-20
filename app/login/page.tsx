@@ -12,8 +12,9 @@ type AuthMode = 'signin' | 'signup' | 'reset'
 export default function LoginPage() {
   const router   = useRouter()
   const supabase = createClient()
-  const [mode, setMode]       = useState<AuthMode>('signin')
-  const [loading, setLoading] = useState(false)
+  const [mode, setMode]         = useState<AuthMode>('signin')
+  const [loading, setLoading]   = useState(false)
+  const [loadingMsg, setLoadingMsg] = useState('Processing…')
   const [showPass, setShowPass] = useState(false)
   const [form, setForm] = useState({
     email: '', password: '', full_name: '', org_name: '', sector: 'business',
@@ -25,6 +26,7 @@ export default function LoginPage() {
   const handleSignIn = async () => {
     if (!form.email || !form.password) return toast.error('Fill in all fields')
     setLoading(true)
+    setLoadingMsg('Signing you in…')
     const { error } = await supabase.auth.signInWithPassword({
       email: form.email, password: form.password,
     })
@@ -41,8 +43,9 @@ export default function LoginPage() {
       return toast.error('Password must be at least 6 characters')
 
     setLoading(true)
+    setLoadingMsg('Creating your account…')
 
-    // 1. Create auth user
+    // ── 1. Create auth user ────────────────────────────────────────
     const { data, error: authError } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
@@ -56,13 +59,14 @@ export default function LoginPage() {
     }
 
     if (!data.user) {
-      toast.error('Sign up failed — please try again')
+      toast.error('Signup failed — please try again')
       setLoading(false)
       return
     }
 
-    // 2. Create organization
-    // RLS policy "allow_signup_insert_org" permits this for any authenticated user
+    // ── 2. Create organisation ─────────────────────────────────────
+    // RLS policy "allow_signup_insert_org" allows any authenticated user
+    setLoadingMsg('Setting up your organisation…')
     const { data: org, error: orgError } = await supabase
       .from('organizations')
       .insert({
@@ -76,12 +80,15 @@ export default function LoginPage() {
       .single()
 
     if (orgError) {
+      // Org failed — sign out the orphaned auth user so they can retry cleanly
+      await supabase.auth.signOut()
       toast.error('Could not create organisation: ' + orgError.message)
       setLoading(false)
       return
     }
 
-    // 3. Create profile linked to org
+    // ── 3. Create profile linked to org ───────────────────────────
+    // RLS policy "allow_signup_insert_profile" allows user to insert own row
     const { error: profileError } = await supabase
       .from('profiles')
       .insert({
@@ -93,18 +100,23 @@ export default function LoginPage() {
       })
 
     if (profileError) {
-      // Profile insert failed — not fatal, user can still log in
-      console.error('Profile error:', profileError.message)
+      // Profile failed — sign out so user doesn't land in a ghost session
+      await supabase.auth.signOut()
+      toast.error('Could not create profile: ' + profileError.message)
+      setLoading(false)
+      return
     }
 
-    // 4. Seed chart of accounts, modules and tax policies via SECURITY DEFINER RPCs
+    // ── 4. Seed via SECURITY DEFINER RPCs (bypass RLS, runs as DB owner) ──
+    setLoadingMsg('Seeding default data…')
     await supabase.rpc('seed_default_coa',     { org_id: org.id })
     await supabase.rpc('seed_default_modules', { org_id: org.id })
     await supabase.rpc('seed_default_tax',     { org_id: org.id })
 
     toast.success('Account created! Signing you in…')
 
-    // 5. Auto sign in
+    // ── 5. Auto sign in ────────────────────────────────────────────
+    setLoadingMsg('Signing you in…')
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: form.email, password: form.password,
     })
@@ -112,8 +124,8 @@ export default function LoginPage() {
     if (!signInError) {
       router.push('/dashboard')
     } else {
-      // Email verification required
-      toast.success('Please check your email to verify your account, then sign in.')
+      // Email verification is on — ask them to verify then sign in manually
+      toast.success('Check your email to verify your account, then sign in.')
       setMode('signin')
     }
 
@@ -124,6 +136,7 @@ export default function LoginPage() {
   const handleReset = async () => {
     if (!form.email) return toast.error('Enter your email')
     setLoading(true)
+    setLoadingMsg('Sending reset link…')
     const { error } = await supabase.auth.resetPasswordForEmail(form.email, {
       redirectTo: `${window.location.origin}/dashboard`,
     })
@@ -273,7 +286,7 @@ export default function LoginPage() {
               {loading ? (
                 <span className="flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  {mode === 'signup' ? 'Setting up your account…' : 'Processing…'}
+                  {loadingMsg}
                 </span>
               ) : (
                 <>
