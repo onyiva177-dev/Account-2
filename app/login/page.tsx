@@ -45,7 +45,7 @@ export default function LoginPage() {
     setLoading(true)
     setLoadingMsg('Creating your account…')
 
-    // ── 1. Create auth user ────────────────────────────────────────
+    // 1. Create auth user
     const { data: signUpData, error: authError } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
@@ -64,8 +64,7 @@ export default function LoginPage() {
       return
     }
 
-    // ── 2. CRITICAL: sign in immediately so auth.uid() is live
-    //      before any RLS-protected inserts ───────────────────────
+    // 2. Sign in immediately so auth.uid() is live for the RPC
     setLoadingMsg('Setting up your organisation…')
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: form.email,
@@ -73,59 +72,35 @@ export default function LoginPage() {
     })
 
     if (signInError) {
-      // Email confirmation required — can't auto-setup
       toast.success('Check your email to verify your account, then sign in.')
       setMode('signin')
       setLoading(false)
       return
     }
 
-    // ── 3. auth.uid() is now live — insert organisation ───────────
-    const { data: org, error: orgError } = await supabase
-      .from('organizations')
-      .insert({
-        name: form.org_name,
-        sector: form.sector,
-        country: 'KE',
-        base_currency: 'KES',
-        settings: {},
-      })
-      .select()
-      .single()
+    // 3. Create org + profile via SECURITY DEFINER RPC (bypasses RLS)
+    const { data: orgId, error: setupError } = await supabase.rpc('create_org_and_profile', {
+      p_user_id:   signUpData.user.id,
+      p_org_name:  form.org_name,
+      p_sector:    form.sector,
+      p_full_name: form.full_name,
+      p_email:     form.email,
+    })
 
-    if (orgError) {
+    if (setupError) {
       await supabase.auth.signOut()
-      toast.error('Could not create organisation: ' + orgError.message)
+      toast.error('Could not set up account: ' + setupError.message)
       setLoading(false)
       return
     }
 
-    // ── 4. Insert profile ─────────────────────────────────────────
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({
-        id: signUpData.user.id,
-        organization_id: org.id,
-        full_name: form.full_name,
-        email: form.email,
-        role: 'super_admin',
-      })
-
-    if (profileError) {
-      await supabase.auth.signOut()
-      toast.error('Could not create profile: ' + profileError.message)
-      setLoading(false)
-      return
-    }
-
-    // ── 5. Seed default data ──────────────────────────────────────
+    // 4. Seed default data
     setLoadingMsg('Seeding default data…')
-    await supabase.rpc('seed_default_coa',     { org_id: org.id })
-    await supabase.rpc('seed_default_modules', { org_id: org.id })
-    await supabase.rpc('seed_default_tax',     { org_id: org.id })
+    await supabase.rpc('seed_default_coa',     { org_id: orgId })
+    await supabase.rpc('seed_default_modules', { org_id: orgId })
+    await supabase.rpc('seed_default_tax',     { org_id: orgId })
 
     toast.success('Account created!')
-    setLoadingMsg('Taking you to dashboard…')
     router.push('/dashboard')
     setLoading(false)
   }
@@ -152,7 +127,6 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex">
-      {/* ── Left brand panel ── */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden" style={{
         background: 'linear-gradient(145deg, #0c4a6e 0%, #0369a1 40%, #7e22ce 100%)'
       }}>
@@ -200,7 +174,6 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ── Right form panel ── */}
       <div className="flex-1 flex items-center justify-center p-6 lg:p-16 bg-white">
         <div className="w-full max-w-md animate-fade-up">
           <div className="lg:hidden flex items-center gap-2 mb-8">
