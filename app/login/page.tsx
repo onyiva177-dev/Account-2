@@ -10,72 +10,78 @@ import { SECTORS } from '@/lib/utils'
 type AuthMode = 'signin' | 'signup' | 'reset'
 
 export default function LoginPage() {
-  const router = useRouter()
+  const router   = useRouter()
   const supabase = createClient()
-  const [mode, setMode] = useState<AuthMode>('signin')
+  const [mode, setMode]       = useState<AuthMode>('signin')
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
   const [form, setForm] = useState({
-    email: '',
-    password: '',
-    full_name: '',
-    org_name: '',
-    sector: 'business',
+    email: '', password: '', full_name: '', org_name: '', sector: 'business',
   })
 
   const update = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }))
 
+  // ── Sign In ──────────────────────────────────────────────────────
   const handleSignIn = async () => {
     if (!form.email || !form.password) return toast.error('Fill in all fields')
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
-    if (error) {
-      toast.error(error.message)
-    } else {
-      toast.success('Welcome back!')
-      router.push('/dashboard')
-    }
+    const { error } = await supabase.auth.signInWithPassword({
+      email: form.email, password: form.password,
+    })
+    if (error) toast.error(error.message)
+    else { toast.success('Welcome back!'); router.push('/dashboard') }
     setLoading(false)
   }
 
+  // ── Sign Up ──────────────────────────────────────────────────────
   const handleSignUp = async () => {
-  if (!form.email || !form.password || !form.full_name || !form.org_name) return toast.error('Fill in all fields')
-  setLoading(true)
+    if (!form.email || !form.password || !form.full_name || !form.org_name)
+      return toast.error('Fill in all fields')
+    if (form.password.length < 6)
+      return toast.error('Password must be at least 6 characters')
 
-  const { data, error } = await supabase.auth.signUp({ 
-    email: form.email, 
-    password: form.password,
-    options: {
-      data: {
-        full_name: form.full_name,
-        org_name: form.org_name,
-        sector: form.sector,
-      }
+    setLoading(true)
+
+    // 1. Create auth user
+    const { data, error: authError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+      options: { data: { full_name: form.full_name } },
+    })
+
+    if (authError) {
+      toast.error(authError.message)
+      setLoading(false)
+      return
     }
-  })
 
-  if (error) { toast.error(error.message); setLoading(false); return }
+    if (!data.user) {
+      toast.error('Sign up failed — please try again')
+      setLoading(false)
+      return
+    }
 
-  if (data.user) {
-    // Use service role bypass by calling an RPC that runs as SECURITY DEFINER
+    // 2. Create organization
+    // RLS policy "allow_signup_insert_org" permits this for any authenticated user
     const { data: org, error: orgError } = await supabase
       .from('organizations')
-      .insert({ 
-        name: form.org_name, 
-        sector: form.sector, 
-        country: 'KE', 
-        base_currency: 'KES' 
+      .insert({
+        name: form.org_name,
+        sector: form.sector,
+        country: 'KE',
+        base_currency: 'KES',
+        settings: {},
       })
       .select()
       .single()
 
     if (orgError) {
-      console.error('Org error:', orgError)
-      toast.error('Account created but setup incomplete. Contact support.')
+      toast.error('Could not create organisation: ' + orgError.message)
       setLoading(false)
       return
     }
 
+    // 3. Create profile linked to org
     const { error: profileError } = await supabase
       .from('profiles')
       .insert({
@@ -83,38 +89,43 @@ export default function LoginPage() {
         organization_id: org.id,
         full_name: form.full_name,
         email: form.email,
-        role: 'super_admin'
+        role: 'super_admin',
       })
 
     if (profileError) {
-      console.error('Profile error:', profileError)
+      // Profile insert failed — not fatal, user can still log in
+      console.error('Profile error:', profileError.message)
     }
 
-    await supabase.rpc('seed_default_coa', { org_id: org.id })
+    // 4. Seed chart of accounts, modules and tax policies via SECURITY DEFINER RPCs
+    await supabase.rpc('seed_default_coa',     { org_id: org.id })
     await supabase.rpc('seed_default_modules', { org_id: org.id })
+    await supabase.rpc('seed_default_tax',     { org_id: org.id })
 
-    toast.success('Account created! Signing you in...')
-    
-    // Auto sign in immediately after signup
-    const { error: signInError } = await supabase.auth.signInWithPassword({ 
-      email: form.email, 
-      password: form.password 
+    toast.success('Account created! Signing you in…')
+
+    // 5. Auto sign in
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: form.email, password: form.password,
     })
-    
+
     if (!signInError) {
       router.push('/dashboard')
     } else {
-      toast.success('Please check your email to verify, then sign in.')
+      // Email verification required
+      toast.success('Please check your email to verify your account, then sign in.')
       setMode('signin')
     }
+
+    setLoading(false)
   }
-  setLoading(false)
-}
+
+  // ── Reset Password ───────────────────────────────────────────────
   const handleReset = async () => {
     if (!form.email) return toast.error('Enter your email')
     setLoading(true)
     const { error } = await supabase.auth.resetPasswordForEmail(form.email, {
-      redirectTo: `${window.location.origin}/dashboard`
+      redirectTo: `${window.location.origin}/dashboard`,
     })
     if (error) toast.error(error.message)
     else toast.success('Reset link sent to your email')
@@ -123,20 +134,20 @@ export default function LoginPage() {
 
   const features = [
     { icon: <BarChart3 size={18} />, text: 'AI-powered financial insights' },
-    { icon: <Shield size={18} />, text: 'Bank-level security & audit trails' },
-    { icon: <Zap size={18} />, text: 'Auto journal entries & reports' },
-    { icon: <Globe size={18} />, text: 'Multi-currency & multi-branch' },
+    { icon: <Shield size={18} />,    text: 'Bank-level security & audit trails' },
+    { icon: <Zap size={18} />,       text: 'Auto journal entries & reports' },
+    { icon: <Globe size={18} />,     text: 'Multi-currency & KRA-compliant' },
   ]
 
   return (
     <div className="min-h-screen flex">
-      {/* Left Panel */}
+      {/* ── Left brand panel ── */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden" style={{
         background: 'linear-gradient(145deg, #0c4a6e 0%, #0369a1 40%, #7e22ce 100%)'
       }}>
         <div className="absolute inset-0 opacity-10" style={{
           backgroundImage: 'radial-gradient(circle at 20% 50%, white 1px, transparent 1px), radial-gradient(circle at 80% 80%, white 1px, transparent 1px)',
-          backgroundSize: '40px 40px'
+          backgroundSize: '40px 40px',
         }} />
         <div className="relative z-10 flex flex-col justify-between p-14 text-white">
           <div>
@@ -153,7 +164,6 @@ export default function LoginPage() {
               AI-assisted financial management for businesses, schools, hospitals, and more.
             </p>
           </div>
-
           <div className="space-y-4">
             {features.map((f, i) => (
               <div key={i} className="flex items-center gap-3 text-blue-100">
@@ -179,7 +189,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Right Panel */}
+      {/* ── Right form panel ── */}
       <div className="flex-1 flex items-center justify-center p-6 lg:p-16 bg-white">
         <div className="w-full max-w-md animate-fade-up">
           {/* Mobile logo */}
@@ -194,7 +204,9 @@ export default function LoginPage() {
             {mode === 'signin' ? 'Welcome back' : mode === 'signup' ? 'Create your account' : 'Reset password'}
           </h2>
           <p className="text-slate-500 text-sm mb-8">
-            {mode === 'signin' ? 'Sign in to your organization' : mode === 'signup' ? 'Get started for free today' : 'We\'ll send you a reset link'}
+            {mode === 'signin'  ? 'Sign in to your organisation'   :
+             mode === 'signup'  ? 'Get started for free today'     :
+             "We'll send you a reset link"}
           </p>
 
           <div className="space-y-4">
@@ -202,11 +214,13 @@ export default function LoginPage() {
               <>
                 <div>
                   <label className="input-label">Full Name</label>
-                  <input className="input" placeholder="Jane Mwangi" value={form.full_name} onChange={e => update('full_name', e.target.value)} />
+                  <input className="input" placeholder="Jane Mwangi"
+                    value={form.full_name} onChange={e => update('full_name', e.target.value)} />
                 </div>
                 <div>
-                  <label className="input-label">Organization Name</label>
-                  <input className="input" placeholder="Nairobi Academy Ltd" value={form.org_name} onChange={e => update('org_name', e.target.value)} />
+                  <label className="input-label">Organisation Name</label>
+                  <input className="input" placeholder="Nairobi Academy Ltd"
+                    value={form.org_name} onChange={e => update('org_name', e.target.value)} />
                 </div>
                 <div>
                   <label className="input-label">Sector</label>
@@ -221,20 +235,30 @@ export default function LoginPage() {
 
             <div>
               <label className="input-label">Email</label>
-              <input className="input" type="email" placeholder="jane@example.com" value={form.email} onChange={e => update('email', e.target.value)} />
+              <input className="input" type="email" placeholder="jane@example.com"
+                value={form.email} onChange={e => update('email', e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && mode === 'signin' && handleSignIn()} />
             </div>
 
             {mode !== 'reset' && (
               <div>
                 <label className="input-label">Password</label>
                 <div className="relative">
-                  <input className="input pr-10" type={showPass ? 'text' : 'password'} placeholder="••••••••" value={form.password} onChange={e => update('password', e.target.value)} onKeyDown={e => e.key === 'Enter' && mode === 'signin' && handleSignIn()} />
-                  <button className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" onClick={() => setShowPass(!showPass)}>
+                  <input className="input pr-10"
+                    type={showPass ? 'text' : 'password'}
+                    placeholder="Minimum 6 characters"
+                    value={form.password}
+                    onChange={e => update('password', e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && mode === 'signin' && handleSignIn()} />
+                  <button type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    onClick={() => setShowPass(s => !s)}>
                     {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
                 {mode === 'signin' && (
-                  <button className="text-xs text-brand-600 hover:underline mt-1 float-right" onClick={() => setMode('reset')}>
+                  <button className="text-xs text-brand-600 hover:underline mt-1 float-right"
+                    onClick={() => setMode('reset')}>
                     Forgot password?
                   </button>
                 )}
@@ -249,11 +273,13 @@ export default function LoginPage() {
               {loading ? (
                 <span className="flex items-center gap-2">
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Processing...
+                  {mode === 'signup' ? 'Setting up your account…' : 'Processing…'}
                 </span>
               ) : (
                 <>
-                  {mode === 'signin' ? 'Sign In' : mode === 'signup' ? 'Create Account' : 'Send Reset Link'}
+                  {mode === 'signin'  ? 'Sign In'         :
+                   mode === 'signup'  ? 'Create Account'  :
+                   'Send Reset Link'}
                   <ArrowRight size={16} />
                 </>
               )}
@@ -263,11 +289,13 @@ export default function LoginPage() {
           <p className="text-sm text-slate-500 text-center mt-6">
             {mode === 'signin' ? (
               <>Don&apos;t have an account?{' '}
-                <button className="text-brand-600 font-medium hover:underline" onClick={() => setMode('signup')}>Sign up free</button>
+                <button className="text-brand-600 font-medium hover:underline"
+                  onClick={() => setMode('signup')}>Sign up free</button>
               </>
             ) : (
               <>Already have an account?{' '}
-                <button className="text-brand-600 font-medium hover:underline" onClick={() => setMode('signin')}>Sign in</button>
+                <button className="text-brand-600 font-medium hover:underline"
+                  onClick={() => setMode('signin')}>Sign in</button>
               </>
             )}
           </p>
