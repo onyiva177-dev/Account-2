@@ -12,10 +12,10 @@ type AuthMode = 'signin' | 'signup' | 'reset'
 export default function LoginPage() {
   const router   = useRouter()
   const supabase = createClient()
-  const [mode, setMode]         = useState<AuthMode>('signin')
-  const [loading, setLoading]   = useState(false)
+  const [mode, setMode]             = useState<AuthMode>('signin')
+  const [loading, setLoading]       = useState(false)
   const [loadingMsg, setLoadingMsg] = useState('Processing…')
-  const [showPass, setShowPass] = useState(false)
+  const [showPass, setShowPass]     = useState(false)
   const [form, setForm] = useState({
     email: '', password: '', full_name: '', org_name: '', sector: 'business',
   })
@@ -46,7 +46,7 @@ export default function LoginPage() {
     setLoadingMsg('Creating your account…')
 
     // ── 1. Create auth user ────────────────────────────────────────
-    const { data, error: authError } = await supabase.auth.signUp({
+    const { data: signUpData, error: authError } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
       options: { data: { full_name: form.full_name } },
@@ -58,15 +58,29 @@ export default function LoginPage() {
       return
     }
 
-    if (!data.user) {
+    if (!signUpData.user) {
       toast.error('Signup failed — please try again')
       setLoading(false)
       return
     }
 
-    // ── 2. Create organisation ─────────────────────────────────────
-    // RLS policy "allow_signup_insert_org" allows any authenticated user
+    // ── 2. CRITICAL: sign in immediately so auth.uid() is live
+    //      before any RLS-protected inserts ───────────────────────
     setLoadingMsg('Setting up your organisation…')
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email: form.email,
+      password: form.password,
+    })
+
+    if (signInError) {
+      // Email confirmation required — can't auto-setup
+      toast.success('Check your email to verify your account, then sign in.')
+      setMode('signin')
+      setLoading(false)
+      return
+    }
+
+    // ── 3. auth.uid() is now live — insert organisation ───────────
     const { data: org, error: orgError } = await supabase
       .from('organizations')
       .insert({
@@ -80,19 +94,17 @@ export default function LoginPage() {
       .single()
 
     if (orgError) {
-      // Org failed — sign out the orphaned auth user so they can retry cleanly
       await supabase.auth.signOut()
       toast.error('Could not create organisation: ' + orgError.message)
       setLoading(false)
       return
     }
 
-    // ── 3. Create profile linked to org ───────────────────────────
-    // RLS policy "allow_signup_insert_profile" allows user to insert own row
+    // ── 4. Insert profile ─────────────────────────────────────────
     const { error: profileError } = await supabase
       .from('profiles')
       .insert({
-        id: data.user.id,
+        id: signUpData.user.id,
         organization_id: org.id,
         full_name: form.full_name,
         email: form.email,
@@ -100,35 +112,21 @@ export default function LoginPage() {
       })
 
     if (profileError) {
-      // Profile failed — sign out so user doesn't land in a ghost session
       await supabase.auth.signOut()
       toast.error('Could not create profile: ' + profileError.message)
       setLoading(false)
       return
     }
 
-    // ── 4. Seed via SECURITY DEFINER RPCs (bypass RLS, runs as DB owner) ──
+    // ── 5. Seed default data ──────────────────────────────────────
     setLoadingMsg('Seeding default data…')
     await supabase.rpc('seed_default_coa',     { org_id: org.id })
     await supabase.rpc('seed_default_modules', { org_id: org.id })
     await supabase.rpc('seed_default_tax',     { org_id: org.id })
 
-    toast.success('Account created! Signing you in…')
-
-    // ── 5. Auto sign in ────────────────────────────────────────────
-    setLoadingMsg('Signing you in…')
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: form.email, password: form.password,
-    })
-
-    if (!signInError) {
-      router.push('/dashboard')
-    } else {
-      // Email verification is on — ask them to verify then sign in manually
-      toast.success('Check your email to verify your account, then sign in.')
-      setMode('signin')
-    }
-
+    toast.success('Account created!')
+    setLoadingMsg('Taking you to dashboard…')
+    router.push('/dashboard')
     setLoading(false)
   }
 
@@ -205,7 +203,6 @@ export default function LoginPage() {
       {/* ── Right form panel ── */}
       <div className="flex-1 flex items-center justify-center p-6 lg:p-16 bg-white">
         <div className="w-full max-w-md animate-fade-up">
-          {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2 mb-8">
             <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center">
               <BarChart3 size={16} className="text-white" />
@@ -290,8 +287,8 @@ export default function LoginPage() {
                 </span>
               ) : (
                 <>
-                  {mode === 'signin'  ? 'Sign In'         :
-                   mode === 'signup'  ? 'Create Account'  :
+                  {mode === 'signin'  ? 'Sign In'        :
+                   mode === 'signup'  ? 'Create Account' :
                    'Send Reset Link'}
                   <ArrowRight size={16} />
                 </>
