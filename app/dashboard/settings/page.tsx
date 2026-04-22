@@ -124,7 +124,6 @@ export default function SettingsPage() {
     }
     setSavingModules(false)
   }
-  <DarkModeToggle showLabel={false} />
 
   // ── Tab 2: Tax Policy ─────────────────────────────────────────────────────
   const currentSettings = (organization?.settings as any) || {}
@@ -580,6 +579,7 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+      <DarkModeToggle showLabel={false} />
     </div>
   )
 }
