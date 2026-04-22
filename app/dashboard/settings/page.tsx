@@ -5,11 +5,10 @@ import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import { SECTORS, CURRENCIES } from '@/lib/utils'
 import type { Sector } from '@/types'
-import { DarkModeToggle } from '@/components/DarkModeToggle'
 import {
   Building2, Shield, Bell, Zap, Save, Lock,
   Eye, EyeOff, RefreshCw, CheckCircle2, AlertTriangle,
-  CreditCard, Key, LogOut
+  CreditCard, Key, LogOut, Moon, Sun
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -579,7 +578,18 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
-      <DarkModeToggle showLabel={false} />
+      <button
+        onClick={() => {
+          const isDark = document.documentElement.classList.toggle('dark')
+          localStorage.setItem('finai_theme', isDark ? 'dark' : 'light')
+        }}
+        className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm font-medium"
+        style={{ background: 'var(--bg-table-head)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
+        title="Toggle dark mode"
+      >
+        <Moon size={15} />
+        <span>Dark mode</span>
+      </button>
     </div>
   )
 }
