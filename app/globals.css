@@ -268,3 +268,147 @@ select.input option { background: var(--bg-card); color: var(--text-primary); }
   background: rgba(32, 33, 36, 0.55);
   backdrop-filter: blur(3px);
 }
+
+/* ================================================================
+   DARK MODE — toggled by adding class="dark" to <html>
+   All original light tokens are preserved. Dark mode only overrides
+   the CSS variables, so every component switches automatically.
+   ================================================================ */
+
+html.dark {
+  --bg-page:        #1f2124;
+  --bg-sidebar:     #17191c;
+  --bg-card:        #28292c;
+  --bg-card-hover:  #2f3033;
+  --bg-input:       #28292c;
+  --bg-table-head:  #202124;
+  --bg-table-row:   #28292c;
+  --bg-table-hover: #303134;
+
+  --border:         #3c4043;
+  --border-light:   #303134;
+
+  --text-primary:   #e8eaed;
+  --text-secondary: #9aa0a6;
+  --text-muted:     #5f6368;
+
+  --brand:          #8ab4f8;
+  --brand-hover:    #aecbfa;
+  --brand-dim:      #1a3a5c;
+
+  --success:        #81c995;
+  --success-dim:    #1a3a28;
+  --warning:        #fdd663;
+  --warning-dim:    #3a2e00;
+  --danger:         #f28b82;
+  --danger-dim:     #4a1c1a;
+  --purple:         #c58af9;
+  --purple-dim:     #3b2068;
+}
+
+/* Dark: card hover needs stronger shadow */
+html.dark .card:hover {
+  border-color: #5f6368;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* Dark: skeleton shimmer */
+html.dark .skeleton {
+  background: linear-gradient(90deg, #303134 25%, #3c4043 50%, #303134 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Dark: recharts */
+html.dark .recharts-cartesian-grid-horizontal line,
+html.dark .recharts-cartesian-grid-vertical line { stroke: #3c4043; }
+
+html.dark .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background: #28292c !important;
+  border-color: #3c4043 !important;
+  color: #e8eaed !important;
+}
+
+/* Dark: input select options */
+html.dark select.input option {
+  background: #28292c;
+  color: #e8eaed;
+}
+
+/* ================================================================
+   MOBILE — responsive utilities
+   ================================================================ */
+
+/* Prevent horizontal scroll on body */
+html, body { overflow-x: hidden; max-width: 100vw; }
+
+/* Auto-rotation: allow landscape/portrait */
+@media screen {
+  html { touch-action: manipulation; }
+}
+
+/* Mobile: tables — horizontal scroll with touch momentum */
+@media (max-width: 767px) {
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 8px;
+  }
+
+  /* Minimum column widths so content doesn't squeeze */
+  .table th,
+  .table td {
+    white-space: nowrap;
+    padding: 10px 12px;
+    font-size: 0.75rem;
+  }
+
+  /* Tighter card padding on mobile */
+  .card { border-radius: 8px; }
+
+  /* Buttons: slightly smaller on mobile */
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger {
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+  }
+
+  /* Input height consistent on mobile */
+  .input { height: 38px; font-size: 16px; /* prevents iOS zoom on focus */ }
+
+  /* Modals: full width on mobile */
+  .modal-backdrop { padding: 12px; align-items: flex-end; }
+  .modal-backdrop > div {
+    border-radius: 16px 16px 0 0;
+    max-height: 92vh;
+  }
+}
+
+/* Tablet */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .table th, .table td { font-size: 0.8125rem; padding: 10px 14px; }
+}
+
+/* Mobile: page heading size */
+@media (max-width: 639px) {
+  h1 { font-size: 1.125rem !important; }
+  h2 { font-size: 1rem !important; }
+}
+
+/* Touch: increase tap targets */
+@media (hover: none) and (pointer: coarse) {
+  .btn-primary,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger { min-height: 40px; }
+
+  .sidebar-item { min-height: 44px; }
+
+  .table tbody tr { cursor: pointer; }
+}
+
+/* Safe area insets (notched phones) */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  main { padding-bottom: max(1.5rem, env(safe-area-inset-bottom)); }
+}
