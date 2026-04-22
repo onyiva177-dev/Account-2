@@ -54,14 +54,18 @@ export default function DashboardPage() {
       .eq('is_active', true)
 
     if (accounts) {
+      // Supabase returns joined rows as arrays — normalise to object
+      const getType = (a: any) =>
+        Array.isArray(a.account_type) ? a.account_type[0] : a.account_type
+
       const getVal = (a: any) =>
-        a.account_type?.normal_balance === 'credit' ? Math.abs(a.balance) : a.balance
+        getType(a)?.normal_balance === 'credit' ? Math.abs(a.balance) : a.balance
 
       const revenue  = accounts
-        .filter(a => a.account_type?.category === 'revenue')
+        .filter(a => getType(a)?.category === 'revenue')
         .reduce((s, a) => s + getVal(a), 0)
       const expenses = accounts
-        .filter(a => a.account_type?.category === 'expense')
+        .filter(a => getType(a)?.category === 'expense')
         .reduce((s, a) => s + getVal(a), 0)
       const cash = accounts
         .filter(a => ['1000','1010'].includes(a.code))
@@ -82,7 +86,7 @@ export default function DashboardPage() {
 
       setExpenseBreakdown(
         accounts
-          .filter(a => a.account_type?.category === 'expense' && Math.abs(a.balance) > 0)
+          .filter(a => getType(a)?.category === 'expense' && Math.abs(a.balance) > 0)
           .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
           .slice(0, 6)
           .map((a, i) => ({
