@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import { SECTORS, CURRENCIES } from '@/lib/utils'
 import type { Sector } from '@/types'
+import { DarkModeToggle } from '@/components/DarkModeToggle'
 import {
   Building2, Shield, Bell, Zap, Save, Lock,
   Eye, EyeOff, RefreshCw, CheckCircle2, AlertTriangle,
@@ -123,6 +124,7 @@ export default function SettingsPage() {
     }
     setSavingModules(false)
   }
+  <DarkModeToggle showLabel={false} />
 
   // ── Tab 2: Tax Policy ─────────────────────────────────────────────────────
   const currentSettings = (organization?.settings as any) || {}
