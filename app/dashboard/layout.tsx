@@ -36,9 +36,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const supabase = createClient()
   const { organization, profile, sidebarOpen, unreadInsights, setSidebarOpen, setOrganization, setProfile } = useAppStore()
 
-  const [loading,      setLoading]      = useState(true)
-  const [mobileOpen,   setMobileOpen]   = useState(false)  // mobile drawer
+  const [loading,    setLoading]    = useState(true)
+  const [mobileOpen, setMobileOpen] = useState(false)
 
+  // ── Auth + profile loader ────────────────────────────────────────────────
   useEffect(() => {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -52,7 +53,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     init()
   }, [])
 
-  // Close mobile drawer on route change
+  // ── Activity logger ──────────────────────────────────────────────────────
+  // Fires on every route change once the profile is confirmed.
+  // Fire-and-forget: never blocks navigation, never surfaces errors in the UI.
+  useEffect(() => {
+    if (!profile) return
+    fetch('/api/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'page_view', page: pathname }),
+    }).catch(() => {})
+  }, [pathname, profile])
+
+  // ── Close mobile drawer on route change ─────────────────────────────────
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
   if (loading) return (
@@ -75,13 +88,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     pathname === n.href || pathname.startsWith(n.href + '/')
   )?.key || 'dashboard'
 
+  // ── Sign out ─────────────────────────────────────────────────────────────
   const handleSignOut = async () => {
+    // Log the logout event before ending the session
+    await fetch('/api/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'logout', page: pathname }),
+    }).catch(() => {})
+
     await supabase.auth.signOut()
     toast.success('Signed out')
     router.push('/login')
   }
 
-  // ── Shared nav content (used in both desktop sidebar and mobile drawer) ──
+  // ── Shared nav content (desktop sidebar + mobile drawer) ─────────────────
   const NavContent = ({ compact }: { compact?: boolean }) => (
     <>
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
