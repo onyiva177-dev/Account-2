@@ -1,0 +1,5 @@
+ User-agent: *
+  Allow: /
+  Disallow: /dashboard/
+  Disallow: /api/
+  Sitemap: https://account-2.vercel.app/sitemap.xml
