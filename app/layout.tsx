@@ -15,6 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={inter.variable}>
       <head>
+        <meta name="google-site-verification" content="kCXXhrbihDtOEc3u3veGpYON9Ma_ax8yjDVKWzgj2A0" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Google+Sans+Display:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
