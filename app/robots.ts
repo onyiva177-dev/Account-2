@@ -6,16 +6,9 @@ export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
       {
-        // Block all crawlers from authenticated pages
         userAgent: '*',
-        allow: ['/', '/login'],
-        disallow: [
-          '/dashboard',
-          '/dashboard/',
-          '/dashboard/*',
-          '/api/',
-          '/api/*',
-        ],
+        allow: ['/login'],
+        disallow: ['/', '/dashboard/', '/api/'],
       },
     ],
     sitemap: `${BASE_URL}/sitemap.xml`,
