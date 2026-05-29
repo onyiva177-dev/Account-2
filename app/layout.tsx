@@ -7,8 +7,27 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-geist' })
 
 export const metadata: Metadata = {
   title: 'FinAI — Smart Accounting System',
-  description: 'AI-Assisted Universal Accounting & Financial Management',
+  description: 'AI-powered accounting, payroll, tax compliance and financial management for Kenyan businesses.',
+  metadataBase: new URL('https://account-2.vercel.app'),
+  alternates: {
+    canonical: '/login',
+  },
   icons: { icon: '/favicon.ico' },
+  openGraph: {
+    title: 'FinAI — Smart Accounting System',
+    description: 'AI-powered accounting for Kenyan businesses. Invoices, payroll, tax compliance, and analytics.',
+    url: 'https://account-2.vercel.app/login',
+    siteName: 'FinAI',
+    type: 'website',
+  },
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: {
+      index: false,
+      follow: false,
+    },
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
