@@ -1,595 +1,691 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
-import { SECTORS, CURRENCIES } from '@/lib/utils'
-import type { Sector } from '@/types'
 import {
-  Building2, Shield, Bell, Zap, Save, Lock,
-  Eye, EyeOff, RefreshCw, CheckCircle2, AlertTriangle,
-  CreditCard, Key, LogOut, Moon, Sun
+  Package, Users, Shield, Bell, Building2, Key,
+  CheckCircle2, AlertTriangle, RefreshCw, X, Plus,
+  Smartphone, Mail, Lock, Unlock
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
-const MODULES = [
-  { key: 'accounting', label: 'Accounting Core',      desc: 'Journal entries, ledger, trial balance', icon: '📒', required: true },
-  { key: 'tax',        label: 'Tax & Compliance',     desc: 'VAT, PAYE, corporate tax calculations',   icon: '🧾', required: false },
-  { key: 'payroll',    label: 'Payroll',               desc: 'Employee salary, PAYE, NHIF, NSSF',      icon: '💰', required: false },
-  { key: 'pos',        label: 'Point of Sale',         desc: 'Sales, receipts, barcode scanning',       icon: '🛍️', required: false },
-  { key: 'inventory',  label: 'Inventory',             desc: 'Stock tracking and management',           icon: '📦', required: false },
-  { key: 'budgeting',  label: 'Budgets & Forecasting', desc: 'Budget planning and variance analysis',   icon: '📊', required: false },
-  { key: 'banking',    label: 'Banking & Reconciliation', desc: 'Bank feeds and statement matching',    icon: '🏦', required: false },
-  { key: 'analytics',  label: 'Analytics',             desc: 'AI-powered financial intelligence',       icon: '🤖', required: false },
+const ALL_MODULES = [
+  { key: 'accounting',   label: 'Accounting',        desc: 'Journal entries, COA, Trial Balance' },
+  { key: 'transactions', label: 'Transactions',       desc: 'Invoices, bills, expenses' },
+  { key: 'contacts',     label: 'Contacts',           desc: 'Customers, vendors, employees' },
+  { key: 'banking',      label: 'Banking',            desc: 'Accounts & reconciliation' },
+  { key: 'inventory',    label: 'Inventory',          desc: 'Products & stock levels' },
+  { key: 'payroll',      label: 'Payroll',            desc: 'PAYE, NHIF, NSSF auto-calculated' },
+  { key: 'tax',          label: 'Tax & Compliance',   desc: 'VAT, KRA compliance' },
+  { key: 'analytics',    label: 'Analytics',          desc: 'AI-powered insights' },
+  { key: 'budgeting',    label: 'Budgets',            desc: 'Budget vs actual' },
+  { key: 'pos',          label: 'POS',                desc: 'Point of sale system' },
+  { key: 'reports',      label: 'Reports',            desc: 'Financial statements' },
 ]
 
-const TABS = ['Organization', 'Modules', 'Tax Policy', 'Security', 'Notifications']
-
-// Reusable toggle component with real state
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={(e) => { e.stopPropagation(); onChange(!checked); }}
-      className={`w-11 h-6 rounded-full relative transition-colors flex-shrink-0 ${checked ? 'bg-brand-600' : 'bg-slate-200'}`}
-    >
-      <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
-    </button>
-  )
-}
+const TABS = [
+  { key: 'organisation', label: 'Organisation',  icon: Building2 },
+  { key: 'modules',      label: 'Modules',       icon: Package },
+  { key: 'team',         label: 'Team & Roles',  icon: Users },
+  { key: 'security',     label: 'Security',      icon: Shield },
+  { key: 'notifications',label: 'Notifications', icon: Bell },
+]
 
 export default function SettingsPage() {
   const supabase = createClient()
   const { organization, profile, setOrganization } = useAppStore()
-  const [tab, setTab] = useState(0)
-  const [saving, setSaving] = useState(false)
+  const [tab, setTab]               = useState('organisation')
+  const [saving, setSaving]         = useState(false)
+  const [subscription, setSubscription] = useState<any>(null)
+  const [tierModules, setTierModules]   = useState<string[]>([])
+  const [orgRoles, setOrgRoles]         = useState<any[]>([])
+  const [teamMembers, setTeamMembers]   = useState<any[]>([])
 
-  // ── Tab 0: Organization ───────────────────────────────────────────────────
+  // Org form
   const [orgForm, setOrgForm] = useState({
-    name:          organization?.name          || '',
-    sector:        (organization?.sector       || 'business') as Sector,
-    country:       organization?.country       || 'KE',
-    base_currency: organization?.base_currency || 'KES',
-    tax_id:        organization?.tax_id        || '',
+    name: organization?.name || '',
+    sector: (organization as any)?.sector || 'business',
+    country: organization?.country || 'KE',
+    tax_id: (organization as any)?.tax_id || '',
   })
 
-  // Keep form in sync if store loads asynchronously
+  // Security
+  const [pwForm, setPwForm]               = useState({ current: '', newPw: '', confirm: '' })
+  const [archivePw, setArchivePw]         = useState('')
+  const [archiveConfirm, setArchiveConfirm] = useState('')
+
+  // Notifications
+  const [notifForm, setNotifForm] = useState({
+    monthly_report: true,
+    report_email: profile?.email || '',
+  })
+
+  // M-Pesa payment modal
+  const [showPayment, setShowPayment]     = useState(false)
+  const [selectedTier, setSelectedTier]   = useState<any>(null)
+  const [allTiers, setAllTiers]           = useState<any[]>([])
+  const [phone, setPhone]                 = useState('')
+  const [payLoading, setPayLoading]       = useState(false)
+  const [checkoutId, setCheckoutId]       = useState('')
+  const [polling, setPolling]             = useState(false)
+
+  // Invite team member
+  const [showInvite, setShowInvite]   = useState(false)
+  const [inviteForm, setInviteForm]   = useState({ email: '', role_id: '' })
+  const [inviteSaving, setInviteSaving] = useState(false)
+
   useEffect(() => {
-    if (organization) {
-      setOrgForm({
-        name:          organization.name          || '',
-        sector:        (organization.sector       || 'business') as Sector,
-        country:       organization.country       || 'KE',
-        base_currency: organization.base_currency || 'KES',
-        tax_id:        organization.tax_id        || '',
-      })
-    }
-  }, [organization?.id])
-
-  const saveOrg = async () => {
     if (!organization) return
-    if (!orgForm.name.trim()) { toast.error('Organization name is required'); return }
-    setSaving(true)
-    const { error } = await supabase
-      .from('organizations')
-      .update({
-        name:          orgForm.name.trim(),
-        sector:        orgForm.sector,
-        country:       orgForm.country,
-        base_currency: orgForm.base_currency,
-        tax_id:        orgForm.tax_id.trim() || null,
-      })
-      .eq('id', organization.id)
+    loadAll()
+    if (organization?.name) setOrgForm(p => ({ ...p, name: organization.name }))
+  }, [organization])
 
-    if (error) {
-      toast.error('Save failed: ' + error.message)
-    } else {
-      // Update the global store so the rest of the app reflects changes
-      setOrganization({ ...organization, ...orgForm })
-      toast.success('Organization settings saved')
+  const loadAll = async () => {
+    const orgId = organization!.id
+
+    // Load subscription + tier
+    const { data: sub } = await supabase
+      .from('org_subscriptions')
+      .select('*, tier:tiers(*)')
+      .eq('organization_id', orgId)
+      .single()
+    setSubscription(sub)
+    setTierModules((sub?.tier?.enabled_modules as string[]) || [])
+
+    // Load all tiers for upgrade
+    const { data: tiers } = await supabase.from('tiers').select('*').eq('is_active', true).order('sort_order')
+    setAllTiers(tiers || [])
+
+    // Load org roles
+    const { data: roles } = await supabase.from('org_roles')
+      .select('*').eq('organization_id', orgId).order('name')
+    setOrgRoles(roles || [])
+
+    // Load team members
+    const { data: members } = await supabase.from('profiles')
+      .select('*, org_role:org_roles(name, slug)')
+      .eq('organization_id', orgId)
+    setTeamMembers(members || [])
+
+    // Load notification settings
+    const { data: schedule } = await supabase.from('report_schedules')
+      .select('*').eq('organization_id', orgId).single()
+    if (schedule) {
+      setNotifForm({ monthly_report: schedule.is_active, report_email: schedule.recipient_email })
     }
+  }
+
+  // ── Save organisation ──────────────────────────────────────────
+  const saveOrg = async () => {
+    setSaving(true)
+    const { error } = await supabase.from('organizations')
+      .update(orgForm).eq('id', organization!.id)
+    if (error) { toast.error('Failed: ' + error.message); setSaving(false); return }
+    setOrganization({ ...organization!, ...orgForm })
+    toast.success('Organisation saved')
     setSaving(false)
   }
 
-  // ── Tab 1: Modules ────────────────────────────────────────────────────────
-  // Stored in organizations.settings JSON column
-  const defaultModules = ['accounting', 'tax', 'payroll', 'inventory', 'banking', 'analytics']
-  const [enabledModules, setEnabledModules] = useState<string[]>(
-    (organization?.settings as any)?.enabled_modules || defaultModules
-  )
-  const [savingModules, setSavingModules] = useState(false)
-
-  const toggleModule = (key: string) => {
-    if (key === 'accounting') return
-    setEnabledModules(prev =>
-      prev.includes(key) ? prev.filter(m => m !== key) : [...prev, key]
-    )
-  }
-
-  const saveModules = async () => {
-    if (!organization) return
-    setSavingModules(true)
-    const currentSettings = (organization.settings as any) || {}
-    const { error } = await supabase
-      .from('organizations')
-      .update({ settings: { ...currentSettings, enabled_modules: enabledModules } })
-      .eq('id', organization.id)
-
-    if (error) {
-      toast.error('Save failed: ' + error.message)
-    } else {
-      setOrganization({ ...organization, settings: { ...currentSettings, enabled_modules: enabledModules } })
-      toast.success('Module preferences saved')
+  // ── Module toggle (package-gated) ─────────────────────────────
+  const toggleModule = async (key: string, currentlyEnabled: boolean) => {
+    if (!tierModules.includes(key)) {
+      toast.error(`${ALL_MODULES.find(m => m.key === key)?.label} is not included in your current package. Upgrade to unlock it.`)
+      return
     }
-    setSavingModules(false)
+    const currentModules: string[] = (organization?.settings as any)?.enabled_modules || []
+    const newModules = currentlyEnabled
+      ? currentModules.filter(m => m !== key)
+      : [...currentModules, key]
+
+    const { error } = await supabase.from('organizations')
+      .update({ settings: { ...((organization?.settings as any) || {}), enabled_modules: newModules } })
+      .eq('id', organization!.id)
+    if (error) { toast.error(error.message); return }
+    setOrganization({ ...organization!, settings: { ...((organization?.settings as any) || {}), enabled_modules: newModules } })
+    toast.success(`${key} ${currentlyEnabled ? 'disabled' : 'enabled'}`)
   }
 
-  // ── Tab 2: Tax Policy ─────────────────────────────────────────────────────
-  const currentSettings = (organization?.settings as any) || {}
-  const taxDefaults = currentSettings.tax_policy || {}
+  // ── M-Pesa payment ─────────────────────────────────────────────
+  const initiateMpesa = async () => {
+    if (!phone || phone.length < 9) { toast.error('Enter valid phone number'); return }
+    if (!selectedTier) return
+    setPayLoading(true)
 
-  const [taxForm, setTaxForm] = useState({
-    vat_rate:          String(taxDefaults.vat_rate          ?? 16),
-    corporate_tax:     String(taxDefaults.corporate_tax     ?? 30),
-    withholding_tax:   String(taxDefaults.withholding_tax   ?? 5),
-    auto_calculate:    taxDefaults.auto_calculate    ?? true,
-    block_remittance:  taxDefaults.block_remittance  ?? true,
-  })
-  const [savingTax, setSavingTax] = useState(false)
+    const res = await fetch('/api/mpesa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone,
+        tier_id:   selectedTier.id,
+        tier_name: selectedTier.name,
+        amount:    selectedTier.price_kes,
+      }),
+    })
+    const data = await res.json()
+    setPayLoading(false)
 
-  const saveTaxPolicy = async () => {
-    if (!organization) return
-    const vat = parseFloat(taxForm.vat_rate)
-    const corp = parseFloat(taxForm.corporate_tax)
-    const wht = parseFloat(taxForm.withholding_tax)
-    if (isNaN(vat) || vat < 0 || vat > 100) { toast.error('VAT rate must be 0–100'); return }
-    if (isNaN(corp) || corp < 0 || corp > 100) { toast.error('Corporate tax rate must be 0–100'); return }
+    if (!res.ok) { toast.error(data.error || 'Payment failed'); return }
 
-    setSavingTax(true)
-    const newSettings = {
-      ...currentSettings,
-      tax_policy: {
-        vat_rate:         vat,
-        corporate_tax:    corp,
-        withholding_tax:  wht,
-        auto_calculate:   taxForm.auto_calculate,
-        block_remittance: taxForm.block_remittance,
+    setCheckoutId(data.checkout_request_id)
+    setPolling(true)
+    toast.success('Check your phone — enter M-Pesa PIN to pay')
+    pollStatus(data.checkout_request_id)
+  }
+
+  const pollStatus = async (cid: string) => {
+    const interval = setInterval(async () => {
+      const res  = await fetch(`/api/mpesa/status?checkout_id=${cid}`)
+      const data = await res.json()
+      if (data.status === 'completed') {
+        clearInterval(interval)
+        setPolling(false)
+        setShowPayment(false)
+        toast.success(`Payment confirmed! Receipt: ${data.mpesa_receipt}`)
+        loadAll()
+      } else if (data.status === 'failed') {
+        clearInterval(interval)
+        setPolling(false)
+        toast.error('Payment failed or was cancelled')
       }
-    }
-    const { error } = await supabase
-      .from('organizations')
-      .update({ settings: newSettings })
-      .eq('id', organization.id)
-
-    if (error) {
-      toast.error('Save failed: ' + error.message)
-    } else {
-      setOrganization({ ...organization, settings: newSettings })
-      toast.success('Tax policy saved')
-    }
-    setSavingTax(false)
+    }, 3000)
+    // Stop polling after 3 minutes
+    setTimeout(() => { clearInterval(interval); setPolling(false) }, 180000)
   }
 
-  // ── Tab 3: Security ───────────────────────────────────────────────────────
-  const secDefaults = currentSettings.security || {}
-  const [security, setSecurity] = useState({
-    two_factor:      secDefaults.two_factor      ?? false,
-    ip_whitelist:    secDefaults.ip_whitelist     ?? false,
-    audit_log:       secDefaults.audit_log        ?? true,
-    session_timeout: secDefaults.session_timeout  ?? true,
-  })
-  const [passwordForm, setPasswordForm] = useState({ current: '', newPass: '', confirm: '' })
-  const [showPasswords, setShowPasswords] = useState(false)
-  const [savingSecurity, setSavingSecurity] = useState(false)
-  const [savingPassword, setSavingPassword] = useState(false)
-
-  const saveSecurity = async () => {
-    if (!organization) return
-    setSavingSecurity(true)
-    const newSettings = { ...currentSettings, security }
-    const { error } = await supabase
-      .from('organizations')
-      .update({ settings: newSettings })
-      .eq('id', organization.id)
-
-    if (error) {
-      toast.error('Save failed: ' + error.message)
-    } else {
-      setOrganization({ ...organization, settings: newSettings })
-      toast.success('Security settings saved')
-    }
-    setSavingSecurity(false)
-  }
-
+  // ── Change password ────────────────────────────────────────────
   const changePassword = async () => {
-    if (!passwordForm.current) { toast.error('Enter your current password'); return }
-    if (passwordForm.newPass.length < 8) { toast.error('New password must be at least 8 characters'); return }
-    if (passwordForm.newPass !== passwordForm.confirm) { toast.error('Passwords do not match'); return }
-    setSavingPassword(true)
-    const { error } = await supabase.auth.updateUser({ password: passwordForm.newPass })
-    if (error) {
-      toast.error('Password change failed: ' + error.message)
-    } else {
-      toast.success('Password changed successfully')
-      setPasswordForm({ current: '', newPass: '', confirm: '' })
-    }
-    setSavingPassword(false)
+    if (pwForm.newPw !== pwForm.confirm) { toast.error('Passwords do not match'); return }
+    if (pwForm.newPw.length < 6) { toast.error('Minimum 6 characters'); return }
+    setSaving(true)
+    const { error } = await supabase.auth.updateUser({ password: pwForm.newPw })
+    if (error) { toast.error(error.message); setSaving(false); return }
+    toast.success('Password changed')
+    setPwForm({ current: '', newPw: '', confirm: '' })
+    setSaving(false)
   }
 
-  // ── Tab 4: Notifications ──────────────────────────────────────────────────
-  const notifDefaults = currentSettings.notifications || {}
-  const [notifications, setNotifications] = useState({
-    tax_reminders:        notifDefaults.tax_reminders        ?? true,
-    overdue_invoices:     notifDefaults.overdue_invoices      ?? true,
-    low_cash_warning:     notifDefaults.low_cash_warning      ?? true,
-    ai_anomaly_alerts:    notifDefaults.ai_anomaly_alerts     ?? true,
-    payroll_reminder:     notifDefaults.payroll_reminder      ?? false,
-    budget_variance:      notifDefaults.budget_variance       ?? true,
-  })
-  const [lowCashThreshold, setLowCashThreshold] = useState(
-    String(notifDefaults.low_cash_threshold ?? 50000)
-  )
-  const [savingNotifs, setSavingNotifs] = useState(false)
+  // ── Set archive password ───────────────────────────────────────
+  const setArchivePassword = async () => {
+    if (archivePw !== archiveConfirm) { toast.error('Passwords do not match'); return }
+    if (archivePw.length < 6) { toast.error('Minimum 6 characters'); return }
+    const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(archivePw))
+    const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
+    const settings = { ...((organization?.settings as any) || {}), archive_password_hash: hash }
+    const { error } = await supabase.from('organizations').update({ settings }).eq('id', organization!.id)
+    if (error) { toast.error(error.message); return }
+    setOrganization({ ...organization!, settings })
+    toast.success('Archive password set')
+    setArchivePw(''); setArchiveConfirm('')
+  }
 
+  // ── Save notification settings ─────────────────────────────────
   const saveNotifications = async () => {
-    if (!organization) return
-    setSavingNotifs(true)
-    const newSettings = {
-      ...currentSettings,
-      notifications: { ...notifications, low_cash_threshold: parseFloat(lowCashThreshold) || 50000 }
-    }
-    const { error } = await supabase
-      .from('organizations')
-      .update({ settings: newSettings })
-      .eq('id', organization.id)
+    setSaving(true)
+    const { data: existing } = await supabase.from('report_schedules')
+      .select('id').eq('organization_id', organization!.id).single()
 
-    if (error) {
-      toast.error('Save failed: ' + error.message)
+    if (existing) {
+      await supabase.from('report_schedules').update({
+        is_active:        notifForm.monthly_report,
+        recipient_email:  notifForm.report_email,
+      }).eq('id', existing.id)
     } else {
-      setOrganization({ ...organization, settings: newSettings })
-      toast.success('Notification preferences saved')
+      await supabase.from('report_schedules').insert({
+        organization_id: organization!.id,
+        report_type:     'monthly_transactions',
+        recipient_email: notifForm.report_email,
+        is_active:       notifForm.monthly_report,
+      })
     }
-    setSavingNotifs(false)
+    toast.success('Notification settings saved')
+    setSaving(false)
+  }
+
+  // ── Invite team member ─────────────────────────────────────────
+  const inviteMember = async () => {
+    if (!inviteForm.email || !inviteForm.role_id) { toast.error('Email and role required'); return }
+    setInviteSaving(true)
+    // Send invite email
+    await fetch('/api/email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to_email:  inviteForm.email,
+        subject:   `You have been invited to join ${organization?.name} on FinAI`,
+        body_html: `<p>You have been invited to join <strong>${organization?.name}</strong> on FinAI.</p>
+                    <p><a href="${window.location.origin}/login">Click here to sign up or log in</a></p>`,
+        type: 'invite',
+      }),
+    })
+    toast.success(`Invitation sent to ${inviteForm.email}`)
+    setShowInvite(false)
+    setInviteForm({ email: '', role_id: '' })
+    setInviteSaving(false)
+  }
+
+  const enabledModules: string[] = (organization?.settings as any)?.enabled_modules || []
+  const tierName = subscription?.tier?.name || 'Free'
+  const tierColor: Record<string, string> = {
+    Free: '#64748b', Starter: '#2563eb', Pro: '#7c3aed', Enterprise: '#d97706'
   }
 
   return (
     <div className="space-y-5 animate-fade-up">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">Settings</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Configure your financial workspace</p>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Settings</h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+          Manage your organisation, team and preferences
+        </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit overflow-x-auto">
-        {TABS.map((t, i) => (
-          <button key={t} onClick={() => setTab(i)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${tab === i ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-            {t}
-          </button>
-        ))}
+      <div className="flex gap-1 overflow-x-auto pb-1">
+        {TABS.map(t => {
+          const Icon = t.icon
+          return (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all flex-shrink-0"
+              style={{
+                background: tab === t.key ? 'var(--brand)' : 'var(--bg-table-head)',
+                color: tab === t.key ? '#fff' : 'var(--text-secondary)',
+                border: `1px solid ${tab === t.key ? 'var(--brand)' : 'var(--border)'}`,
+              }}>
+              <Icon size={14} />{t.label}
+            </button>
+          )
+        })}
       </div>
 
-      {/* ── TAB 0: Organization ── */}
-      {tab === 0 && (
-        <div className="card p-6 max-w-xl space-y-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
-              <Building2 size={18} className="text-brand-600" />
+      {/* ── ORGANISATION TAB ── */}
+      {tab === 'organisation' && (
+        <div className="card p-5 space-y-4 max-w-lg">
+          <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Organisation Details</h3>
+          <div>
+            <label className="input-label">Organisation Name</label>
+            <input className="input" value={orgForm.name} onChange={e => setOrgForm(p => ({ ...p, name: e.target.value }))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="input-label">Sector</label>
+              <select className="input" value={orgForm.sector} onChange={e => setOrgForm(p => ({ ...p, sector: e.target.value }))}>
+                {['business','school','hospital','ngo','government','retail','manufacturing','agriculture','transport','hospitality','other']
+                  .map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+              </select>
             </div>
             <div>
-              <h3 className="font-semibold text-slate-900">Organization Details</h3>
-              <p className="text-xs text-slate-500">Saved directly to your database</p>
+              <label className="input-label">Country</label>
+              <select className="input" value={orgForm.country} onChange={e => setOrgForm(p => ({ ...p, country: e.target.value }))}>
+                <option value="KE">Kenya</option>
+                <option value="UG">Uganda</option>
+                <option value="TZ">Tanzania</option>
+                <option value="RW">Rwanda</option>
+              </select>
             </div>
           </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="input-label">Organization Name *</label>
-              <input className="input" value={orgForm.name}
-                onChange={e => setOrgForm(p => ({ ...p, name: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="input-label">Sector</label>
-                <select className="input" value={orgForm.sector}
-                  onChange={e => setOrgForm(p => ({ ...p, sector: e.target.value as Sector }))}>
-                  {SECTORS.map(s => <option key={s.value} value={s.value}>{s.icon} {s.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="input-label">Base Currency</label>
-                <select className="input" value={orgForm.base_currency}
-                  onChange={e => setOrgForm(p => ({ ...p, base_currency: e.target.value }))}>
-                  {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="input-label">Country</label>
-                <select className="input" value={orgForm.country}
-                  onChange={e => setOrgForm(p => ({ ...p, country: e.target.value }))}>
-                  {[
-                    ['KE','Kenya'],['UG','Uganda'],['TZ','Tanzania'],
-                    ['RW','Rwanda'],['NG','Nigeria'],['ZA','South Africa'],
-                    ['GB','United Kingdom'],['US','United States'],
-                  ].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="input-label">Tax / KRA PIN</label>
-                <input className="input" placeholder="A000000000X" value={orgForm.tax_id}
-                  onChange={e => setOrgForm(p => ({ ...p, tax_id: e.target.value }))} />
-              </div>
-            </div>
+          <div>
+            <label className="input-label">KRA PIN / Tax ID</label>
+            <input className="input" placeholder="A000000000X" value={orgForm.tax_id}
+              onChange={e => setOrgForm(p => ({ ...p, tax_id: e.target.value }))} />
           </div>
-
-          <button onClick={saveOrg} disabled={saving} className="btn-primary">
-            {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={15} />}
-            {saving ? 'Saving…' : 'Save Changes'}
+          <button className="btn-primary" onClick={saveOrg} disabled={saving}>
+            <CheckCircle2 size={15} />{saving ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
       )}
 
-      {/* ── TAB 1: Modules ── */}
-      {tab === 1 && (
+      {/* ── MODULES TAB ── */}
+      {tab === 'modules' && (
         <div className="space-y-4 max-w-2xl">
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
-            <Zap size={16} className="text-brand-600 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-slate-700">Toggle modules on/off. Changes are saved to your workspace settings.</p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {MODULES.map(m => {
-              const isEnabled = enabledModules.includes(m.key)
-              return (
-                <div key={m.key}
-                  className={`card p-4 flex items-center gap-3 transition-all ${
-                    m.required ? 'opacity-75' : 'cursor-pointer hover:shadow-md'
-                  } ${isEnabled ? 'ring-2 ring-brand-500' : ''}`}
-                  >
-                  <span className="text-2xl">{m.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-slate-900 text-sm flex items-center gap-2">
-                      {m.label}
-                      {m.required && <span className="text-xs text-slate-400 font-normal">(required)</span>}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5 leading-tight">{m.desc}</p>
-                  </div>
-                  <Toggle checked={isEnabled} onChange={() => !m.required && toggleModule(m.key)} />
-                </div>
-              )
-            })}
-          </div>
-          <button onClick={saveModules} disabled={savingModules} className="btn-primary">
-            {savingModules ? <RefreshCw size={14} className="animate-spin" /> : <Save size={15} />}
-            {savingModules ? 'Saving…' : 'Save Module Preferences'}
-          </button>
-        </div>
-      )}
-
-      {/* ── TAB 2: Tax Policy ── */}
-      {tab === 2 && (
-        <div className="card p-6 max-w-2xl space-y-5">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-              <CreditCard size={18} className="text-amber-600" />
-            </div>
+          {/* Current plan */}
+          <div className="card p-4 flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h3 className="font-semibold text-slate-900">Tax Policy Configuration</h3>
-              <p className="text-xs text-slate-500">Kenya Revenue Authority compliance settings</p>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Current Package</p>
+              <p className="font-bold text-lg" style={{ color: tierColor[tierName] || 'var(--brand)' }}>{tierName}</p>
+              {subscription?.current_period_end && (
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  Renews: {new Date(subscription.current_period_end).toLocaleDateString('en-KE')}
+                </p>
+              )}
             </div>
-          </div>
-
-          <div className="space-y-4">
-            {[
-              { label: 'VAT Rate (Standard)', key: 'vat_rate',        suffix: '%', min: 0, max: 100 },
-              { label: 'Corporate Tax Rate',  key: 'corporate_tax',   suffix: '%', min: 0, max: 100 },
-              { label: 'Withholding Tax Rate',key: 'withholding_tax', suffix: '%', min: 0, max: 100 },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="input-label">{f.label}</label>
-                <div className="relative">
-                  <input type="number" min={f.min} max={f.max} step="0.1" className="input pr-8"
-                    value={(taxForm as any)[f.key]}
-                    onChange={e => setTaxForm(p => ({ ...p, [f.key]: e.target.value }))} />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">{f.suffix}</span>
-                </div>
-              </div>
-            ))}
-
-            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl">
-              <div>
-                <p className="font-medium text-slate-900 text-sm">Auto-calculate Tax on Transactions</p>
-                <p className="text-xs text-slate-500 mt-0.5">Automatically compute VAT on invoices and bills</p>
-              </div>
-              <Toggle checked={taxForm.auto_calculate}
-                onChange={v => setTaxForm(p => ({ ...p, auto_calculate: v }))} />
-            </div>
-            <div className="flex items-center justify-between p-4 bg-amber-50 rounded-xl">
-              <div>
-                <p className="font-medium text-slate-900 text-sm">Block Auto-remittance</p>
-                <p className="text-xs text-slate-500 mt-0.5">Require manual approval before any tax payment</p>
-              </div>
-              <Toggle checked={taxForm.block_remittance}
-                onChange={v => setTaxForm(p => ({ ...p, block_remittance: v }))} />
-            </div>
-          </div>
-
-          <button onClick={saveTaxPolicy} disabled={savingTax} className="btn-primary">
-            {savingTax ? <RefreshCw size={14} className="animate-spin" /> : <Save size={15} />}
-            {savingTax ? 'Saving…' : 'Save Tax Policy'}
-          </button>
-        </div>
-      )}
-
-      {/* ── TAB 3: Security ── */}
-      {tab === 3 && (
-        <div className="space-y-4 max-w-xl">
-          {/* Security toggles */}
-          <div className="card p-6 space-y-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-red-50 flex items-center justify-center">
-                <Shield size={18} className="text-red-600" />
-              </div>
-              <h3 className="font-semibold text-slate-900">Security Settings</h3>
-            </div>
-
-            {[
-              { key: 'two_factor',      label: 'Two-Factor Authentication',  desc: 'Require OTP on every login' },
-              { key: 'ip_whitelist',    label: 'IP Whitelisting',            desc: 'Restrict access to approved IPs' },
-              { key: 'audit_log',       label: 'Audit Log',                  desc: 'Record every action with timestamp' },
-              { key: 'session_timeout', label: 'Session Timeout (30 min)',   desc: 'Auto-logout after inactivity' },
-            ].map(s => (
-              <div key={s.key} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                <div>
-                  <p className="font-medium text-slate-900 text-sm">{s.label}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{s.desc}</p>
-                </div>
-                <Toggle
-                  checked={(security as any)[s.key]}
-                  onChange={v => setSecurity(p => ({ ...p, [s.key]: v }))}
-                />
-              </div>
-            ))}
-
-            <button onClick={saveSecurity} disabled={savingSecurity} className="btn-primary">
-              {savingSecurity ? <RefreshCw size={14} className="animate-spin" /> : <Save size={15} />}
-              {savingSecurity ? 'Saving…' : 'Save Security Settings'}
+            <button className="btn-primary" onClick={() => setShowPayment(true)}>
+              <Package size={14} />Upgrade Package
             </button>
           </div>
 
+          {/* Module grid */}
+          <div className="card p-4">
+            <p className="text-xs font-semibold mb-4 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+              Module Access
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {ALL_MODULES.map(mod => {
+                const inPlan    = tierModules.includes(mod.key)
+                const isEnabled = enabledModules.includes(mod.key)
+                return (
+                  <div key={mod.key} className="flex items-center justify-between p-3 rounded-xl"
+                    style={{
+                      background: isEnabled ? 'var(--brand-dim)' : 'var(--bg-table-head)',
+                      border: `1px solid ${isEnabled ? 'var(--brand)' : 'var(--border)'}40`,
+                      opacity: inPlan ? 1 : 0.5,
+                    }}>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{mod.label}</p>
+                        {!inPlan && (
+                          <span className="badge text-xs" style={{ background: 'var(--warning-dim)', color: 'var(--warning)' }}>
+                            Upgrade
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{mod.desc}</p>
+                    </div>
+                    <button
+                      onClick={() => toggleModule(mod.key, isEnabled)}
+                      title={!inPlan ? 'Not in your plan — upgrade to unlock' : ''}
+                      style={{
+                        width: 44, height: 24, borderRadius: 12,
+                        background: isEnabled ? 'var(--brand)' : 'var(--border)',
+                        border: 'none', cursor: inPlan ? 'pointer' : 'not-allowed',
+                        position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                      }}>
+                      <span style={{
+                        position: 'absolute', top: 3, left: isEnabled ? 23 : 3,
+                        width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s',
+                      }} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TEAM & ROLES TAB ── */}
+      {tab === 'team' && (
+        <div className="space-y-4 max-w-2xl">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Team Members</h3>
+            <button className="btn-primary text-sm" onClick={() => setShowInvite(true)}>
+              <Plus size={14} />Invite Member
+            </button>
+          </div>
+
+          <div className="card overflow-hidden">
+            <table className="table">
+              <thead><tr><th>Member</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
+              <tbody>
+                {teamMembers.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
+                    No team members yet
+                  </td></tr>
+                ) : teamMembers.map(m => (
+                  <tr key={m.id}>
+                    <td className="font-medium text-sm">{m.full_name}</td>
+                    <td className="text-xs" style={{ color: 'var(--text-secondary)' }}>{m.email || '—'}</td>
+                    <td>
+                      <span className="badge badge-blue text-xs capitalize">
+                        {(m.org_role as any)?.name || 'Owner'}
+                      </span>
+                    </td>
+                    <td className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {m.created_at ? new Date(m.created_at).toLocaleDateString('en-KE') : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Roles list */}
+          <div className="card p-4">
+            <h4 className="font-semibold text-sm mb-3" style={{ color: 'var(--text-primary)' }}>Available Roles</h4>
+            <div className="space-y-2">
+              {orgRoles.map(role => {
+                const perms = role.permissions as any
+                const modules = perms?.modules === 'all' ? 'All modules' :
+                  Array.isArray(perms?.modules) ? perms.modules.join(', ') : '—'
+                return (
+                  <div key={role.id} className="flex items-start justify-between p-3 rounded-xl"
+                    style={{ background: 'var(--bg-table-head)', border: '1px solid var(--border)' }}>
+                    <div>
+                      <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{role.name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{modules}</p>
+                    </div>
+                    <div className="flex gap-2 text-xs">
+                      {perms?.can_delete && <span className="badge badge-red">Can delete</span>}
+                      {perms?.can_manage_users && <span className="badge badge-purple">Manage users</span>}
+                      {perms?.can_view_reports && <span className="badge badge-green">View reports</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SECURITY TAB ── */}
+      {tab === 'security' && (
+        <div className="space-y-4 max-w-md">
           {/* Change password */}
-          <div className="card p-6 space-y-4">
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
-                <Key size={18} className="text-slate-600" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-slate-900">Change Password</h3>
-                <p className="text-xs text-slate-500">Logged in as {profile?.email}</p>
-              </div>
+          <div className="card p-5 space-y-3">
+            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Change Password</h3>
+            <div>
+              <label className="input-label">New Password</label>
+              <input type="password" className="input" placeholder="Minimum 6 characters"
+                value={pwForm.newPw} onChange={e => setPwForm(p => ({ ...p, newPw: e.target.value }))} />
+            </div>
+            <div>
+              <label className="input-label">Confirm Password</label>
+              <input type="password" className="input" placeholder="Repeat password"
+                value={pwForm.confirm} onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} />
+            </div>
+            <button className="btn-primary" onClick={changePassword} disabled={saving}>
+              <Key size={14} />{saving ? 'Saving…' : 'Change Password'}
+            </button>
+          </div>
+
+          {/* Archive password */}
+          <div className="card p-5 space-y-3">
+            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Archive Password</h3>
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Protects the deletion archive. Separate from your login password.
+            </p>
+            <div>
+              <label className="input-label">New Archive Password</label>
+              <input type="password" className="input" placeholder="Minimum 6 characters"
+                value={archivePw} onChange={e => setArchivePw(e.target.value)} />
+            </div>
+            <div>
+              <label className="input-label">Confirm</label>
+              <input type="password" className="input" value={archiveConfirm}
+                onChange={e => setArchiveConfirm(e.target.value)} />
+            </div>
+            <button className="btn-primary" onClick={setArchivePassword}>
+              <Lock size={14} />Set Archive Password
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── NOTIFICATIONS TAB ── */}
+      {tab === 'notifications' && (
+        <div className="card p-5 space-y-4 max-w-md">
+          <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Email Notifications</h3>
+
+          <div className="flex items-center justify-between p-3 rounded-xl"
+            style={{ background: 'var(--bg-table-head)', border: '1px solid var(--border)' }}>
+            <div>
+              <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Monthly Financial Report</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                Auto-sent on the 1st of every month with journal entries and P&L summary
+              </p>
+            </div>
+            <button onClick={() => setNotifForm(p => ({ ...p, monthly_report: !p.monthly_report }))}
+              style={{
+                width: 44, height: 24, borderRadius: 12, flexShrink: 0,
+                background: notifForm.monthly_report ? 'var(--brand)' : 'var(--border)',
+                border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
+              }}>
+              <span style={{
+                position: 'absolute', top: 3,
+                left: notifForm.monthly_report ? 23 : 3,
+                width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                transition: 'left 0.2s',
+              }} />
+            </button>
+          </div>
+
+          {notifForm.monthly_report && (
+            <div>
+              <label className="input-label">Send report to</label>
+              <input type="email" className="input" placeholder="owner@company.com"
+                value={notifForm.report_email}
+                onChange={e => setNotifForm(p => ({ ...p, report_email: e.target.value }))} />
+            </div>
+          )}
+
+          <button className="btn-primary" onClick={saveNotifications} disabled={saving}>
+            <Bell size={14} />{saving ? 'Saving…' : 'Save Preferences'}
+          </button>
+        </div>
+      )}
+
+      {/* ── M-PESA PAYMENT MODAL ── */}
+      {showPayment && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={e => e.target === e.currentTarget && !polling && setShowPayment(false)}>
+          <div className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[92vh] flex flex-col overflow-hidden"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
+              <h2 className="font-bold" style={{ color: 'var(--text-primary)' }}>Upgrade Package</h2>
+              {!polling && (
+                <button className="btn-ghost p-2" onClick={() => setShowPayment(false)}><X size={16} /></button>
+              )}
             </div>
 
-            <div className="space-y-3">
-              {[
-                { key: 'current', label: 'Current Password',  placeholder: 'Enter current password' },
-                { key: 'newPass', label: 'New Password',       placeholder: 'Min. 8 characters' },
-                { key: 'confirm', label: 'Confirm New Password', placeholder: 'Repeat new password' },
-              ].map(f => (
-                <div key={f.key}>
-                  <label className="input-label">{f.label}</label>
-                  <div className="relative">
-                    <input
-                      type={showPasswords ? 'text' : 'password'}
-                      className="input pr-10"
-                      placeholder={f.placeholder}
-                      value={(passwordForm as any)[f.key]}
-                      onChange={e => setPasswordForm(p => ({ ...p, [f.key]: e.target.value }))}
-                    />
-                    {f.key === 'newPass' && (
-                      <button type="button" onClick={() => setShowPasswords(p => !p)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                        {showPasswords ? <EyeOff size={15} /> : <Eye size={15} />}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {!checkoutId ? (
+                <>
+                  {/* Tier selection */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {allTiers.map(tier => (
+                      <button key={tier.id} onClick={() => setSelectedTier(tier)}
+                        className="text-left p-4 rounded-xl transition-all"
+                        style={{
+                          border: `2px solid ${selectedTier?.id === tier.id ? 'var(--brand)' : 'var(--border)'}`,
+                          background: selectedTier?.id === tier.id ? 'var(--brand-dim)' : 'var(--bg-table-head)',
+                        }}>
+                        <p className="font-bold" style={{ color: 'var(--text-primary)' }}>{tier.name}</p>
+                        <p className="text-lg font-bold mt-1" style={{ color: 'var(--brand)' }}>
+                          KES {Number(tier.price_kes).toLocaleString()}<span className="text-xs font-normal" style={{ color: 'var(--text-muted)' }}>/mo</span>
+                        </p>
+                        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                          {(tier.enabled_modules as string[]).length} modules · {tier.max_users} users
+                        </p>
                       </button>
-                    )}
+                    ))}
                   </div>
+
+                  {selectedTier && selectedTier.price_kes > 0 && (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-xl" style={{ background: 'var(--success-dim)', border: '1px solid var(--success)30' }}>
+                        <p className="text-sm font-medium" style={{ color: 'var(--success)' }}>
+                          Pay KES {Number(selectedTier.price_kes).toLocaleString()} via M-Pesa
+                        </p>
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                          Modules unlock instantly after payment confirmation
+                        </p>
+                      </div>
+                      <div>
+                        <label className="input-label">M-Pesa Phone Number</label>
+                        <div className="relative">
+                          <Smartphone size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                          <input className="input pl-8" placeholder="07XXXXXXXX or 254XXXXXXXXX"
+                            value={phone} onChange={e => setPhone(e.target.value)} />
+                        </div>
+                      </div>
+                      <button className="btn-primary w-full justify-center" onClick={initiateMpesa} disabled={payLoading}>
+                        {payLoading
+                          ? <><RefreshCw size={14} className="animate-spin" />Sending STK push…</>
+                          : <><Smartphone size={14} />Pay KES {Number(selectedTier.price_kes).toLocaleString()} via M-Pesa</>}
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                // Polling state
+                <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
+                  {polling ? (
+                    <>
+                      <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'var(--brand-dim)' }}>
+                        <Smartphone size={28} style={{ color: 'var(--brand)' }} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>Waiting for M-Pesa…</p>
+                        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                          Enter your M-Pesa PIN on your phone to confirm payment
+                        </p>
+                        <div className="flex justify-center gap-1 mt-4">
+                          {[0,1,2].map(i => (
+                            <div key={i} className="w-2 h-2 rounded-full animate-bounce"
+                              style={{ background: 'var(--brand)', animationDelay: `${i * 0.15}s` }} />
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-3">
+                      <CheckCircle2 size={40} style={{ color: 'var(--success)' }} />
+                      <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Payment confirmed!</p>
+                    </div>
+                  )}
                 </div>
-              ))}
-              {passwordForm.newPass && passwordForm.confirm && passwordForm.newPass !== passwordForm.confirm && (
-                <p className="text-xs text-red-500 flex items-center gap-1"><AlertTriangle size={11} />Passwords do not match</p>
-              )}
-              {passwordForm.newPass && passwordForm.confirm && passwordForm.newPass === passwordForm.confirm && passwordForm.newPass.length >= 8 && (
-                <p className="text-xs text-green-600 flex items-center gap-1"><CheckCircle2 size={11} />Passwords match</p>
               )}
             </div>
-
-            <button onClick={changePassword} disabled={savingPassword} className="btn-primary">
-              {savingPassword ? <RefreshCw size={14} className="animate-spin" /> : <Lock size={15} />}
-              {savingPassword ? 'Updating…' : 'Update Password'}
-            </button>
           </div>
         </div>
       )}
 
-      {/* ── TAB 4: Notifications ── */}
-      {tab === 4 && (
-        <div className="card p-6 max-w-xl space-y-1">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center">
-              <Bell size={18} className="text-purple-600" />
+      {/* ── INVITE MODAL ── */}
+      {showInvite && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onClick={e => e.target === e.currentTarget && setShowInvite(false)}>
+          <div className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
+              <h2 className="font-bold" style={{ color: 'var(--text-primary)' }}>Invite Team Member</h2>
+              <button className="btn-ghost p-2" onClick={() => setShowInvite(false)}><X size={16} /></button>
             </div>
-            <div>
-              <h3 className="font-semibold text-slate-900">Notification Preferences</h3>
-              <p className="text-xs text-slate-500">Saved to your workspace settings</p>
-            </div>
-          </div>
-
-          {[
-            { key: 'tax_reminders',     label: 'Tax Reminders',           desc: '7 days before KRA due date' },
-            { key: 'overdue_invoices',  label: 'Overdue Invoice Alerts',  desc: 'Daily digest of overdue invoices' },
-            { key: 'ai_anomaly_alerts', label: 'AI Anomaly Alerts',       desc: 'Unusual transactions detected' },
-            { key: 'payroll_reminder',  label: 'Payroll Reminder',        desc: '3 days before payroll run' },
-            { key: 'budget_variance',   label: 'Budget Variance Alert',   desc: 'When spending exceeds 90% of budget' },
-          ].map(n => (
-            <div key={n.key} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
+            <div className="p-4 space-y-3">
               <div>
-                <p className="text-sm font-medium text-slate-900">{n.label}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{n.desc}</p>
+                <label className="input-label">Email Address *</label>
+                <input type="email" className="input" placeholder="colleague@company.com"
+                  value={inviteForm.email} onChange={e => setInviteForm(p => ({ ...p, email: e.target.value }))} />
               </div>
-              <Toggle
-                checked={(notifications as any)[n.key]}
-                onChange={v => setNotifications(p => ({ ...p, [n.key]: v }))}
-              />
-            </div>
-          ))}
-
-          {/* Low cash threshold */}
-          <div className="flex items-center justify-between py-3 border-b border-slate-100">
-            <div>
-              <div className="flex items-center gap-3">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">Low Cash Balance Warning</p>
-                  <p className="text-xs text-slate-500 mt-0.5">Alert when cash drops below threshold</p>
-                </div>
+              <div>
+                <label className="input-label">Assign Role *</label>
+                <select className="input" value={inviteForm.role_id}
+                  onChange={e => setInviteForm(p => ({ ...p, role_id: e.target.value }))}>
+                  <option value="">Select role…</option>
+                  {orgRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button className="btn-secondary flex-1" onClick={() => setShowInvite(false)}>Cancel</button>
+                <button className="btn-primary flex-1 justify-center" onClick={inviteMember} disabled={inviteSaving}>
+                  <Mail size={14} />{inviteSaving ? 'Sending…' : 'Send Invite'}
+                </button>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">KES</span>
-                <input
-                  type="number" min="0"
-                  className="input text-right text-sm w-32 pl-10"
-                  value={lowCashThreshold}
-                  onChange={e => setLowCashThreshold(e.target.value)}
-                />
-              </div>
-              <Toggle
-                checked={notifications.low_cash_warning}
-                onChange={v => setNotifications(p => ({ ...p, low_cash_warning: v }))}
-              />
-            </div>
-          </div>
-
-          <div className="pt-4">
-            <button onClick={saveNotifications} disabled={savingNotifs} className="btn-primary">
-              {savingNotifs ? <RefreshCw size={14} className="animate-spin" /> : <Save size={15} />}
-              {savingNotifs ? 'Saving…' : 'Save Preferences'}
-            </button>
           </div>
         </div>
       )}
-      <button
-        onClick={() => {
-          const isDark = document.documentElement.classList.toggle('dark')
-          localStorage.setItem('finai_theme', isDark ? 'dark' : 'light')
-        }}
-        className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all text-sm font-medium"
-        style={{ background: 'var(--bg-table-head)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}
-        title="Toggle dark mode"
-      >
-        <Moon size={15} />
-        <span>Dark mode</span>
-      </button>
     </div>
   )
 }
