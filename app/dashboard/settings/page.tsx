@@ -5,80 +5,80 @@ import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import {
   Package, Users, Shield, Bell, Building2, Key,
-  CheckCircle2, AlertTriangle, RefreshCw, X, Plus,
-  Smartphone, Mail, Lock, Unlock
+  CheckCircle2, X, Plus, Smartphone, Mail, Lock, RefreshCw
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const ALL_MODULES = [
-  { key: 'accounting',   label: 'Accounting',        desc: 'Journal entries, COA, Trial Balance' },
-  { key: 'transactions', label: 'Transactions',       desc: 'Invoices, bills, expenses' },
-  { key: 'contacts',     label: 'Contacts',           desc: 'Customers, vendors, employees' },
-  { key: 'banking',      label: 'Banking',            desc: 'Accounts & reconciliation' },
-  { key: 'inventory',    label: 'Inventory',          desc: 'Products & stock levels' },
-  { key: 'payroll',      label: 'Payroll',            desc: 'PAYE, NHIF, NSSF auto-calculated' },
-  { key: 'tax',          label: 'Tax & Compliance',   desc: 'VAT, KRA compliance' },
-  { key: 'analytics',    label: 'Analytics',          desc: 'AI-powered insights' },
-  { key: 'budgeting',    label: 'Budgets',            desc: 'Budget vs actual' },
-  { key: 'pos',          label: 'POS',                desc: 'Point of sale system' },
-  { key: 'reports',      label: 'Reports',            desc: 'Financial statements' },
+  { key: 'accounting',   label: 'Accounting',       desc: 'Journal entries, COA, Trial Balance' },
+  { key: 'transactions', label: 'Transactions',      desc: 'Invoices, bills, expenses' },
+  { key: 'contacts',     label: 'Contacts',          desc: 'Customers, vendors, employees' },
+  { key: 'banking',      label: 'Banking',           desc: 'Accounts & reconciliation' },
+  { key: 'inventory',    label: 'Inventory',         desc: 'Products & stock levels' },
+  { key: 'payroll',      label: 'Payroll',           desc: 'PAYE, NHIF, NSSF auto-calculated' },
+  { key: 'tax',          label: 'Tax & Compliance',  desc: 'VAT, KRA compliance' },
+  { key: 'analytics',    label: 'Analytics',         desc: 'AI-powered insights' },
+  { key: 'budgeting',    label: 'Budgets',           desc: 'Budget vs actual' },
+  { key: 'pos',          label: 'POS',               desc: 'Point of sale system' },
+  { key: 'reports',      label: 'Reports',           desc: 'Financial statements' },
 ]
 
 const TABS = [
-  { key: 'organisation', label: 'Organisation',  icon: Building2 },
-  { key: 'modules',      label: 'Modules',       icon: Package },
-  { key: 'team',         label: 'Team & Roles',  icon: Users },
-  { key: 'security',     label: 'Security',      icon: Shield },
-  { key: 'notifications',label: 'Notifications', icon: Bell },
+  { key: 'organisation', label: 'Organisation', icon: Building2 },
+  { key: 'modules',      label: 'Modules',      icon: Package },
+  { key: 'team',         label: 'Team & Roles', icon: Users },
+  { key: 'security',     label: 'Security',     icon: Shield },
+  { key: 'notifications',label: 'Notifications',icon: Bell },
 ]
 
 export default function SettingsPage() {
   const supabase = createClient()
   const { organization, profile, setOrganization } = useAppStore()
-  const [tab, setTab]               = useState('organisation')
-  const [saving, setSaving]         = useState(false)
+  const [tab, setTab]             = useState('organisation')
+  const [saving, setSaving]       = useState(false)
   const [subscription, setSubscription] = useState<any>(null)
   const [tierModules, setTierModules]   = useState<string[]>([])
-  const [orgRoles, setOrgRoles]         = useState<any[]>([])
-  const [teamMembers, setTeamMembers]   = useState<any[]>([])
+  const [enabledModules, setEnabledModules] = useState<string[]>([])
+  const [orgRoles, setOrgRoles]     = useState<any[]>([])
+  const [teamMembers, setTeamMembers] = useState<any[]>([])
+  const [allTiers, setAllTiers]     = useState<any[]>([])
 
   // Org form
   const [orgForm, setOrgForm] = useState({
-    name: organization?.name || '',
-    sector: (organization as any)?.sector || 'business',
-    country: organization?.country || 'KE',
-    tax_id: (organization as any)?.tax_id || '',
+    name: '', sector: 'business', country: 'KE', tax_id: '',
   })
 
   // Security
-  const [pwForm, setPwForm]               = useState({ current: '', newPw: '', confirm: '' })
-  const [archivePw, setArchivePw]         = useState('')
+  const [pwForm, setPwForm]           = useState({ newPw: '', confirm: '' })
+  const [archivePw, setArchivePw]     = useState('')
   const [archiveConfirm, setArchiveConfirm] = useState('')
 
   // Notifications
-  const [notifForm, setNotifForm] = useState({
-    monthly_report: true,
-    report_email: profile?.email || '',
-  })
+  const [notifForm, setNotifForm] = useState({ monthly_report: true, report_email: '' })
 
-  // M-Pesa payment modal
-  const [showPayment, setShowPayment]     = useState(false)
-  const [selectedTier, setSelectedTier]   = useState<any>(null)
-  const [allTiers, setAllTiers]           = useState<any[]>([])
-  const [phone, setPhone]                 = useState('')
-  const [payLoading, setPayLoading]       = useState(false)
-  const [checkoutId, setCheckoutId]       = useState('')
-  const [polling, setPolling]             = useState(false)
+  // Payment modal
+  const [showPayment, setShowPayment]   = useState(false)
+  const [selectedTier, setSelectedTier] = useState<any>(null)
+  const [phone, setPhone]               = useState('')
+  const [payLoading, setPayLoading]     = useState(false)
+  const [checkoutId, setCheckoutId]     = useState('')
+  const [polling, setPolling]           = useState(false)
 
-  // Invite team member
+  // Invite
   const [showInvite, setShowInvite]   = useState(false)
   const [inviteForm, setInviteForm]   = useState({ email: '', role_id: '' })
   const [inviteSaving, setInviteSaving] = useState(false)
 
   useEffect(() => {
-    if (!organization) return
-    loadAll()
-    if (organization?.name) setOrgForm(p => ({ ...p, name: organization.name }))
+    if (organization) {
+      setOrgForm({
+        name:    organization.name || '',
+        sector:  (organization as any).sector || 'business',
+        country: organization.country || 'KE',
+        tax_id:  (organization as any).tax_id || '',
+      })
+      loadAll()
+    }
   }, [organization])
 
   const loadAll = async () => {
@@ -89,67 +89,104 @@ export default function SettingsPage() {
       .from('org_subscriptions')
       .select('*, tier:tiers(*)')
       .eq('organization_id', orgId)
-      .single()
+      .maybeSingle()       // maybeSingle so no error if no subscription
     setSubscription(sub)
-    setTierModules((sub?.tier?.enabled_modules as string[]) || [])
 
-    // Load all tiers for upgrade
-    const { data: tiers } = await supabase.from('tiers').select('*').eq('is_active', true).order('sort_order')
+    const tierMods: string[] = (sub?.tier?.enabled_modules as string[]) || []
+    setTierModules(tierMods)
+
+    // KEY FIX: enabled_modules in org settings must ONLY contain
+    // modules that are ALSO in the tier. Anything extra gets stripped.
+    const rawEnabled: string[] = (organization?.settings as any)?.enabled_modules || []
+    const validEnabled = rawEnabled.filter(m => tierMods.includes(m))
+
+    // If there is a mismatch (org has modules not in tier), fix it in DB
+    if (validEnabled.length !== rawEnabled.length) {
+      await supabase.from('organizations').update({
+        settings: {
+          ...((organization?.settings as any) || {}),
+          enabled_modules: validEnabled,
+        }
+      }).eq('id', orgId)
+      setOrganization({
+        ...organization!,
+        settings: { ...((organization?.settings as any) || {}), enabled_modules: validEnabled },
+      })
+    }
+
+    setEnabledModules(validEnabled)
+
+    // Load all tiers for upgrade modal
+    const { data: tiers } = await supabase
+      .from('tiers').select('*').eq('is_active', true).order('sort_order')
     setAllTiers(tiers || [])
 
     // Load org roles
-    const { data: roles } = await supabase.from('org_roles')
-      .select('*').eq('organization_id', orgId).order('name')
+    const { data: roles } = await supabase
+      .from('org_roles').select('*').eq('organization_id', orgId).order('name')
     setOrgRoles(roles || [])
 
-    // Load team members
-    const { data: members } = await supabase.from('profiles')
-      .select('*, org_role:org_roles(name, slug)')
+    // Load team
+    const { data: members } = await supabase
+      .from('profiles')
+      .select('*, org_role:org_roles(name,slug)')
       .eq('organization_id', orgId)
     setTeamMembers(members || [])
 
-    // Load notification settings
-    const { data: schedule } = await supabase.from('report_schedules')
-      .select('*').eq('organization_id', orgId).single()
-    if (schedule) {
-      setNotifForm({ monthly_report: schedule.is_active, report_email: schedule.recipient_email })
+    // Load notification schedule
+    const { data: sched } = await supabase
+      .from('report_schedules').select('*').eq('organization_id', orgId).maybeSingle()
+    if (sched) {
+      setNotifForm({ monthly_report: sched.is_active, report_email: sched.recipient_email })
+    } else {
+      setNotifForm({ monthly_report: false, report_email: profile?.email || '' })
     }
   }
 
-  // ── Save organisation ──────────────────────────────────────────
+  // ── Save org ───────────────────────────────────────────────────
   const saveOrg = async () => {
     setSaving(true)
     const { error } = await supabase.from('organizations')
       .update(orgForm).eq('id', organization!.id)
-    if (error) { toast.error('Failed: ' + error.message); setSaving(false); return }
+    if (error) { toast.error(error.message); setSaving(false); return }
     setOrganization({ ...organization!, ...orgForm })
-    toast.success('Organisation saved')
+    toast.success('Saved')
     setSaving(false)
   }
 
-  // ── Module toggle (package-gated) ─────────────────────────────
+  // ── Module toggle — strictly gated by tier ─────────────────────
   const toggleModule = async (key: string, currentlyEnabled: boolean) => {
+    // Hard gate: module must be in tier
     if (!tierModules.includes(key)) {
-      toast.error(`${ALL_MODULES.find(m => m.key === key)?.label} is not included in your current package. Upgrade to unlock it.`)
+      const modLabel = ALL_MODULES.find(m => m.key === key)?.label
+      toast.error(`${modLabel} is not included in your current plan. Click "Upgrade Package" to unlock it.`)
       return
     }
-    const currentModules: string[] = (organization?.settings as any)?.enabled_modules || []
-    const newModules = currentlyEnabled
-      ? currentModules.filter(m => m !== key)
-      : [...currentModules, key]
+
+    const newEnabled = currentlyEnabled
+      ? enabledModules.filter(m => m !== key)
+      : [...enabledModules, key]
+
+    const newSettings = {
+      ...((organization?.settings as any) || {}),
+      enabled_modules: newEnabled,
+    }
 
     const { error } = await supabase.from('organizations')
-      .update({ settings: { ...((organization?.settings as any) || {}), enabled_modules: newModules } })
-      .eq('id', organization!.id)
+      .update({ settings: newSettings }).eq('id', organization!.id)
     if (error) { toast.error(error.message); return }
-    setOrganization({ ...organization!, settings: { ...((organization?.settings as any) || {}), enabled_modules: newModules } })
+
+    setEnabledModules(newEnabled)
+    setOrganization({ ...organization!, settings: newSettings })
     toast.success(`${key} ${currentlyEnabled ? 'disabled' : 'enabled'}`)
   }
 
   // ── M-Pesa payment ─────────────────────────────────────────────
   const initiateMpesa = async () => {
-    if (!phone || phone.length < 9) { toast.error('Enter valid phone number'); return }
-    if (!selectedTier) return
+    if (!phone || phone.replace(/\D/g,'').length < 9) {
+      toast.error('Enter a valid M-Pesa number'); return
+    }
+    if (!selectedTier) { toast.error('Select a package'); return }
     setPayLoading(true)
 
     const res = await fetch('/api/mpesa', {
@@ -165,15 +202,19 @@ export default function SettingsPage() {
     const data = await res.json()
     setPayLoading(false)
 
-    if (!res.ok) { toast.error(data.error || 'Payment failed'); return }
+    if (!res.ok) {
+      // Show exact error so Evans can debug M-Pesa setup
+      toast.error(data.error || 'Payment failed — check M-Pesa env vars in Vercel')
+      return
+    }
 
     setCheckoutId(data.checkout_request_id)
     setPolling(true)
-    toast.success('Check your phone — enter M-Pesa PIN to pay')
+    toast.success('STK push sent — enter PIN on your phone')
     pollStatus(data.checkout_request_id)
   }
 
-  const pollStatus = async (cid: string) => {
+  const pollStatus = (cid: string) => {
     const interval = setInterval(async () => {
       const res  = await fetch(`/api/mpesa/status?checkout_id=${cid}`)
       const data = await res.json()
@@ -181,15 +222,15 @@ export default function SettingsPage() {
         clearInterval(interval)
         setPolling(false)
         setShowPayment(false)
+        setCheckoutId('')
         toast.success(`Payment confirmed! Receipt: ${data.mpesa_receipt}`)
         loadAll()
       } else if (data.status === 'failed') {
         clearInterval(interval)
         setPolling(false)
-        toast.error('Payment failed or was cancelled')
+        toast.error('Payment was cancelled or failed')
       }
     }, 3000)
-    // Stop polling after 3 minutes
     setTimeout(() => { clearInterval(interval); setPolling(false) }, 180000)
   }
 
@@ -201,34 +242,32 @@ export default function SettingsPage() {
     const { error } = await supabase.auth.updateUser({ password: pwForm.newPw })
     if (error) { toast.error(error.message); setSaving(false); return }
     toast.success('Password changed')
-    setPwForm({ current: '', newPw: '', confirm: '' })
+    setPwForm({ newPw: '', confirm: '' })
     setSaving(false)
   }
 
-  // ── Set archive password ───────────────────────────────────────
+  // ── Archive password ───────────────────────────────────────────
   const setArchivePassword = async () => {
     if (archivePw !== archiveConfirm) { toast.error('Passwords do not match'); return }
     if (archivePw.length < 6) { toast.error('Minimum 6 characters'); return }
     const buf  = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(archivePw))
     const hash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('')
     const settings = { ...((organization?.settings as any) || {}), archive_password_hash: hash }
-    const { error } = await supabase.from('organizations').update({ settings }).eq('id', organization!.id)
-    if (error) { toast.error(error.message); return }
+    await supabase.from('organizations').update({ settings }).eq('id', organization!.id)
     setOrganization({ ...organization!, settings })
     toast.success('Archive password set')
     setArchivePw(''); setArchiveConfirm('')
   }
 
-  // ── Save notification settings ─────────────────────────────────
+  // ── Save notifications ─────────────────────────────────────────
   const saveNotifications = async () => {
     setSaving(true)
     const { data: existing } = await supabase.from('report_schedules')
-      .select('id').eq('organization_id', organization!.id).single()
-
+      .select('id').eq('organization_id', organization!.id).maybeSingle()
     if (existing) {
       await supabase.from('report_schedules').update({
-        is_active:        notifForm.monthly_report,
-        recipient_email:  notifForm.report_email,
+        is_active: notifForm.monthly_report,
+        recipient_email: notifForm.report_email,
       }).eq('id', existing.id)
     } else {
       await supabase.from('report_schedules').insert({
@@ -238,15 +277,16 @@ export default function SettingsPage() {
         is_active:       notifForm.monthly_report,
       })
     }
-    toast.success('Notification settings saved')
+    toast.success('Saved')
     setSaving(false)
   }
 
-  // ── Invite team member ─────────────────────────────────────────
+  // ── Invite member ──────────────────────────────────────────────
   const inviteMember = async () => {
-    if (!inviteForm.email || !inviteForm.role_id) { toast.error('Email and role required'); return }
+    if (!inviteForm.email || !inviteForm.role_id) {
+      toast.error('Email and role required'); return
+    }
     setInviteSaving(true)
-    // Send invite email
     await fetch('/api/email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -258,15 +298,14 @@ export default function SettingsPage() {
         type: 'invite',
       }),
     })
-    toast.success(`Invitation sent to ${inviteForm.email}`)
+    toast.success(`Invite sent to ${inviteForm.email}`)
     setShowInvite(false)
     setInviteForm({ email: '', role_id: '' })
     setInviteSaving(false)
   }
 
-  const enabledModules: string[] = (organization?.settings as any)?.enabled_modules || []
-  const tierName = subscription?.tier?.name || 'Free'
-  const tierColor: Record<string, string> = {
+  const tierName  = subscription?.tier?.name || 'Free'
+  const tierColor: Record<string,string> = {
     Free: '#64748b', Starter: '#2563eb', Pro: '#7c3aed', Enterprise: '#d97706'
   }
 
@@ -303,19 +342,22 @@ export default function SettingsPage() {
           <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Organisation Details</h3>
           <div>
             <label className="input-label">Organisation Name</label>
-            <input className="input" value={orgForm.name} onChange={e => setOrgForm(p => ({ ...p, name: e.target.value }))} />
+            <input className="input" value={orgForm.name}
+              onChange={e => setOrgForm(p => ({ ...p, name: e.target.value }))} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="input-label">Sector</label>
-              <select className="input" value={orgForm.sector} onChange={e => setOrgForm(p => ({ ...p, sector: e.target.value }))}>
+              <select className="input" value={orgForm.sector}
+                onChange={e => setOrgForm(p => ({ ...p, sector: e.target.value }))}>
                 {['business','school','hospital','ngo','government','retail','manufacturing','agriculture','transport','hospitality','other']
-                  .map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                  .map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
               </select>
             </div>
             <div>
               <label className="input-label">Country</label>
-              <select className="input" value={orgForm.country} onChange={e => setOrgForm(p => ({ ...p, country: e.target.value }))}>
+              <select className="input" value={orgForm.country}
+                onChange={e => setOrgForm(p => ({ ...p, country: e.target.value }))}>
                 <option value="KE">Kenya</option>
                 <option value="UG">Uganda</option>
                 <option value="TZ">Tanzania</option>
@@ -337,60 +379,77 @@ export default function SettingsPage() {
       {/* ── MODULES TAB ── */}
       {tab === 'modules' && (
         <div className="space-y-4 max-w-2xl">
-          {/* Current plan */}
+
+          {/* Plan card */}
           <div className="card p-4 flex items-center justify-between flex-wrap gap-3">
             <div>
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Current Package</p>
-              <p className="font-bold text-lg" style={{ color: tierColor[tierName] || 'var(--brand)' }}>{tierName}</p>
-              {subscription?.current_period_end && (
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  Renews: {new Date(subscription.current_period_end).toLocaleDateString('en-KE')}
-                </p>
-              )}
+              <p className="font-bold text-lg" style={{ color: tierColor[tierName] || '#64748b' }}>
+                {tierName}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                {tierModules.length} module{tierModules.length !== 1 ? 's' : ''} unlocked
+                {subscription?.current_period_end
+                  ? ` · renews ${new Date(subscription.current_period_end).toLocaleDateString('en-KE')}`
+                  : ''}
+              </p>
             </div>
-            <button className="btn-primary" onClick={() => setShowPayment(true)}>
+            <button className="btn-primary" onClick={() => { setShowPayment(true); setCheckoutId(''); setSelectedTier(null) }}>
               <Package size={14} />Upgrade Package
             </button>
           </div>
 
-          {/* Module grid */}
+          {/* Module grid — toggles locked for non-tier modules */}
           <div className="card p-4">
-            <p className="text-xs font-semibold mb-4 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-              Module Access
-            </p>
+            <p className="text-xs font-semibold mb-4 uppercase tracking-wider"
+              style={{ color: 'var(--text-muted)' }}>Module Access</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {ALL_MODULES.map(mod => {
-                const inPlan    = tierModules.includes(mod.key)
+                const inTier    = tierModules.includes(mod.key)
                 const isEnabled = enabledModules.includes(mod.key)
                 return (
-                  <div key={mod.key} className="flex items-center justify-between p-3 rounded-xl"
+                  <div key={mod.key}
+                    className="flex items-center justify-between p-3 rounded-xl"
                     style={{
-                      background: isEnabled ? 'var(--brand-dim)' : 'var(--bg-table-head)',
-                      border: `1px solid ${isEnabled ? 'var(--brand)' : 'var(--border)'}40`,
-                      opacity: inPlan ? 1 : 0.5,
+                      background: inTier && isEnabled
+                        ? 'var(--brand-dim)' : 'var(--bg-table-head)',
+                      border: `1px solid ${inTier && isEnabled ? 'var(--brand)' : 'var(--border)'}40`,
                     }}>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{mod.label}</p>
-                        {!inPlan && (
-                          <span className="badge text-xs" style={{ background: 'var(--warning-dim)', color: 'var(--warning)' }}>
+                    <div className="min-w-0 pr-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {mod.label}
+                        </p>
+                        {/* Show Upgrade badge if not in tier */}
+                        {!inTier && (
+                          <span className="badge text-xs"
+                            style={{ background: 'var(--warning-dim)', color: 'var(--warning)' }}>
                             Upgrade
                           </span>
                         )}
                       </div>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{mod.desc}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                        {mod.desc}
+                      </p>
                     </div>
+
+                    {/* Toggle — disabled visually and functionally if not in tier */}
                     <button
                       onClick={() => toggleModule(mod.key, isEnabled)}
-                      title={!inPlan ? 'Not in your plan — upgrade to unlock' : ''}
+                      title={!inTier ? 'Not in your plan — upgrade to unlock' : undefined}
                       style={{
-                        width: 44, height: 24, borderRadius: 12,
-                        background: isEnabled ? 'var(--brand)' : 'var(--border)',
-                        border: 'none', cursor: inPlan ? 'pointer' : 'not-allowed',
-                        position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+                        width: 44, height: 24, borderRadius: 12, flexShrink: 0,
+                        // If not in tier: always grey and OFF regardless of DB value
+                        background: (inTier && isEnabled) ? 'var(--brand)' : '#cbd5e1',
+                        border: 'none',
+                        cursor: inTier ? 'pointer' : 'not-allowed',
+                        position: 'relative', transition: 'background 0.2s',
+                        opacity: inTier ? 1 : 0.5,
                       }}>
                       <span style={{
-                        position: 'absolute', top: 3, left: isEnabled ? 23 : 3,
+                        position: 'absolute', top: 3,
+                        // Dot position: right if in-tier AND enabled, else left
+                        left: (inTier && isEnabled) ? 23 : 3,
                         width: 18, height: 18, borderRadius: '50%', background: '#fff',
                         transition: 'left 0.2s',
                       }} />
@@ -412,15 +471,15 @@ export default function SettingsPage() {
               <Plus size={14} />Invite Member
             </button>
           </div>
-
           <div className="card overflow-hidden">
             <table className="table">
-              <thead><tr><th>Member</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
+              <thead>
+                <tr><th>Member</th><th>Email</th><th>Role</th><th>Joined</th></tr>
+              </thead>
               <tbody>
                 {teamMembers.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-8" style={{ color: 'var(--text-muted)' }}>
-                    No team members yet
-                  </td></tr>
+                  <tr><td colSpan={4} className="text-center py-8"
+                    style={{ color: 'var(--text-muted)' }}>No team members yet</td></tr>
                 ) : teamMembers.map(m => (
                   <tr key={m.id}>
                     <td className="font-medium text-sm">{m.full_name}</td>
@@ -438,26 +497,28 @@ export default function SettingsPage() {
               </tbody>
             </table>
           </div>
-
-          {/* Roles list */}
           <div className="card p-4">
-            <h4 className="font-semibold text-sm mb-3" style={{ color: 'var(--text-primary)' }}>Available Roles</h4>
+            <h4 className="font-semibold text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
+              Roles in this organisation
+            </h4>
             <div className="space-y-2">
               {orgRoles.map(role => {
-                const perms = role.permissions as any
-                const modules = perms?.modules === 'all' ? 'All modules' :
-                  Array.isArray(perms?.modules) ? perms.modules.join(', ') : '—'
+                const perms   = role.permissions as any
+                const modules = perms?.modules === 'all' ? 'All modules'
+                  : Array.isArray(perms?.modules) ? perms.modules.join(', ') : '—'
                 return (
                   <div key={role.id} className="flex items-start justify-between p-3 rounded-xl"
                     style={{ background: 'var(--bg-table-head)', border: '1px solid var(--border)' }}>
                     <div>
-                      <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>{role.name}</p>
+                      <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+                        {role.name}
+                      </p>
                       <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{modules}</p>
                     </div>
-                    <div className="flex gap-2 text-xs">
-                      {perms?.can_delete && <span className="badge badge-red">Can delete</span>}
-                      {perms?.can_manage_users && <span className="badge badge-purple">Manage users</span>}
-                      {perms?.can_view_reports && <span className="badge badge-green">View reports</span>}
+                    <div className="flex gap-2 flex-wrap">
+                      {perms?.can_delete        && <span className="badge badge-red text-xs">Delete</span>}
+                      {perms?.can_manage_users  && <span className="badge badge-purple text-xs">Manage users</span>}
+                      {perms?.can_view_reports  && <span className="badge badge-green text-xs">Reports</span>}
                     </div>
                   </div>
                 )
@@ -470,7 +531,6 @@ export default function SettingsPage() {
       {/* ── SECURITY TAB ── */}
       {tab === 'security' && (
         <div className="space-y-4 max-w-md">
-          {/* Change password */}
           <div className="card p-5 space-y-3">
             <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Change Password</h3>
             <div>
@@ -480,19 +540,17 @@ export default function SettingsPage() {
             </div>
             <div>
               <label className="input-label">Confirm Password</label>
-              <input type="password" className="input" placeholder="Repeat password"
+              <input type="password" className="input"
                 value={pwForm.confirm} onChange={e => setPwForm(p => ({ ...p, confirm: e.target.value }))} />
             </div>
             <button className="btn-primary" onClick={changePassword} disabled={saving}>
               <Key size={14} />{saving ? 'Saving…' : 'Change Password'}
             </button>
           </div>
-
-          {/* Archive password */}
           <div className="card p-5 space-y-3">
             <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Archive Password</h3>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              Protects the deletion archive. Separate from your login password.
+              Protects deleted entries archive. Separate from your login password.
             </p>
             <div>
               <label className="input-label">New Archive Password</label>
@@ -501,8 +559,8 @@ export default function SettingsPage() {
             </div>
             <div>
               <label className="input-label">Confirm</label>
-              <input type="password" className="input" value={archiveConfirm}
-                onChange={e => setArchiveConfirm(e.target.value)} />
+              <input type="password" className="input"
+                value={archiveConfirm} onChange={e => setArchiveConfirm(e.target.value)} />
             </div>
             <button className="btn-primary" onClick={setArchivePassword}>
               <Lock size={14} />Set Archive Password
@@ -515,19 +573,18 @@ export default function SettingsPage() {
       {tab === 'notifications' && (
         <div className="card p-5 space-y-4 max-w-md">
           <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Email Notifications</h3>
-
           <div className="flex items-center justify-between p-3 rounded-xl"
             style={{ background: 'var(--bg-table-head)', border: '1px solid var(--border)' }}>
             <div>
               <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Monthly Financial Report</p>
               <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                Auto-sent on the 1st of every month with journal entries and P&L summary
+                Auto-sent on the 1st of every month
               </p>
             </div>
             <button onClick={() => setNotifForm(p => ({ ...p, monthly_report: !p.monthly_report }))}
               style={{
                 width: 44, height: 24, borderRadius: 12, flexShrink: 0,
-                background: notifForm.monthly_report ? 'var(--brand)' : 'var(--border)',
+                background: notifForm.monthly_report ? 'var(--brand)' : '#cbd5e1',
                 border: 'none', cursor: 'pointer', position: 'relative', transition: 'background 0.2s',
               }}>
               <span style={{
@@ -538,41 +595,42 @@ export default function SettingsPage() {
               }} />
             </button>
           </div>
-
           {notifForm.monthly_report && (
             <div>
-              <label className="input-label">Send report to</label>
+              <label className="input-label">Send report to this email</label>
               <input type="email" className="input" placeholder="owner@company.com"
                 value={notifForm.report_email}
                 onChange={e => setNotifForm(p => ({ ...p, report_email: e.target.value }))} />
             </div>
           )}
-
           <button className="btn-primary" onClick={saveNotifications} disabled={saving}>
             <Bell size={14} />{saving ? 'Saving…' : 'Save Preferences'}
           </button>
         </div>
       )}
 
-      {/* ── M-PESA PAYMENT MODAL ── */}
+      {/* ── UPGRADE / PAYMENT MODAL ── */}
       {showPayment && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)' }}
           onClick={e => e.target === e.currentTarget && !polling && setShowPayment(false)}>
           <div className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[92vh] flex flex-col overflow-hidden"
             style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-            <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between p-4"
+              style={{ borderBottom: '1px solid var(--border)' }}>
               <h2 className="font-bold" style={{ color: 'var(--text-primary)' }}>Upgrade Package</h2>
               {!polling && (
-                <button className="btn-ghost p-2" onClick={() => setShowPayment(false)}><X size={16} /></button>
+                <button className="btn-ghost p-2" onClick={() => setShowPayment(false)}>
+                  <X size={16} />
+                </button>
               )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {!checkoutId ? (
                 <>
-                  {/* Tier selection */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Tier grid */}
+                  <div className="grid grid-cols-2 gap-3">
                     {allTiers.map(tier => (
                       <button key={tier.id} onClick={() => setSelectedTier(tier)}
                         className="text-left p-4 rounded-xl transition-all"
@@ -580,20 +638,22 @@ export default function SettingsPage() {
                           border: `2px solid ${selectedTier?.id === tier.id ? 'var(--brand)' : 'var(--border)'}`,
                           background: selectedTier?.id === tier.id ? 'var(--brand-dim)' : 'var(--bg-table-head)',
                         }}>
-                        <p className="font-bold" style={{ color: 'var(--text-primary)' }}>{tier.name}</p>
-                        <p className="text-lg font-bold mt-1" style={{ color: 'var(--brand)' }}>
-                          KES {Number(tier.price_kes).toLocaleString()}<span className="text-xs font-normal" style={{ color: 'var(--text-muted)' }}>/mo</span>
+                        <p className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>{tier.name}</p>
+                        <p className="font-bold text-lg mt-1" style={{ color: 'var(--brand)' }}>
+                          KES {Number(tier.price_kes).toLocaleString()}
+                          <span className="text-xs font-normal" style={{ color: 'var(--text-muted)' }}>/mo</span>
                         </p>
-                        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
                           {(tier.enabled_modules as string[]).length} modules · {tier.max_users} users
                         </p>
                       </button>
                     ))}
                   </div>
 
-                  {selectedTier && selectedTier.price_kes > 0 && (
+                  {selectedTier && Number(selectedTier.price_kes) > 0 && (
                     <div className="space-y-3">
-                      <div className="p-3 rounded-xl" style={{ background: 'var(--success-dim)', border: '1px solid var(--success)30' }}>
+                      <div className="p-3 rounded-xl"
+                        style={{ background: 'var(--success-dim)', border: '1px solid var(--success)40' }}>
                         <p className="text-sm font-medium" style={{ color: 'var(--success)' }}>
                           Pay KES {Number(selectedTier.price_kes).toLocaleString()} via M-Pesa
                         </p>
@@ -604,46 +664,48 @@ export default function SettingsPage() {
                       <div>
                         <label className="input-label">M-Pesa Phone Number</label>
                         <div className="relative">
-                          <Smartphone size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                          <Smartphone size={14} className="absolute left-3 top-1/2 -translate-y-1/2"
+                            style={{ color: 'var(--text-muted)' }} />
                           <input className="input pl-8" placeholder="07XXXXXXXX or 254XXXXXXXXX"
                             value={phone} onChange={e => setPhone(e.target.value)} />
                         </div>
                       </div>
-                      <button className="btn-primary w-full justify-center" onClick={initiateMpesa} disabled={payLoading}>
+                      <button className="btn-primary w-full justify-center"
+                        onClick={initiateMpesa} disabled={payLoading}>
                         {payLoading
                           ? <><RefreshCw size={14} className="animate-spin" />Sending STK push…</>
                           : <><Smartphone size={14} />Pay KES {Number(selectedTier.price_kes).toLocaleString()} via M-Pesa</>}
                       </button>
                     </div>
                   )}
+
+                  {selectedTier && Number(selectedTier.price_kes) === 0 && (
+                    <p className="text-sm text-center" style={{ color: 'var(--text-muted)' }}>
+                      Free plan — no payment needed
+                    </p>
+                  )}
                 </>
               ) : (
-                // Polling state
-                <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
-                  {polling ? (
-                    <>
-                      <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: 'var(--brand-dim)' }}>
-                        <Smartphone size={28} style={{ color: 'var(--brand)' }} />
-                      </div>
-                      <div>
-                        <p className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>Waiting for M-Pesa…</p>
-                        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                          Enter your M-Pesa PIN on your phone to confirm payment
-                        </p>
-                        <div className="flex justify-center gap-1 mt-4">
-                          {[0,1,2].map(i => (
-                            <div key={i} className="w-2 h-2 rounded-full animate-bounce"
-                              style={{ background: 'var(--brand)', animationDelay: `${i * 0.15}s` }} />
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center gap-3">
-                      <CheckCircle2 size={40} style={{ color: 'var(--success)' }} />
-                      <p className="font-bold" style={{ color: 'var(--text-primary)' }}>Payment confirmed!</p>
+                /* Polling state */
+                <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center"
+                    style={{ background: 'var(--brand-dim)' }}>
+                    <Smartphone size={28} style={{ color: 'var(--brand)' }} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>
+                      Waiting for M-Pesa…
+                    </p>
+                    <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                      Enter your PIN on your phone to confirm
+                    </p>
+                    <div className="flex justify-center gap-1 mt-4">
+                      {[0,1,2].map(i => (
+                        <div key={i} className="w-2 h-2 rounded-full animate-bounce"
+                          style={{ background: 'var(--brand)', animationDelay: `${i*0.15}s` }} />
+                      ))}
                     </div>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
@@ -658,7 +720,8 @@ export default function SettingsPage() {
           onClick={e => e.target === e.currentTarget && setShowInvite(false)}>
           <div className="w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl"
             style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
-            <div className="flex items-center justify-between p-4" style={{ borderBottom: '1px solid var(--border)' }}>
+            <div className="flex items-center justify-between p-4"
+              style={{ borderBottom: '1px solid var(--border)' }}>
               <h2 className="font-bold" style={{ color: 'var(--text-primary)' }}>Invite Team Member</h2>
               <button className="btn-ghost p-2" onClick={() => setShowInvite(false)}><X size={16} /></button>
             </div>
@@ -666,7 +729,8 @@ export default function SettingsPage() {
               <div>
                 <label className="input-label">Email Address *</label>
                 <input type="email" className="input" placeholder="colleague@company.com"
-                  value={inviteForm.email} onChange={e => setInviteForm(p => ({ ...p, email: e.target.value }))} />
+                  value={inviteForm.email}
+                  onChange={e => setInviteForm(p => ({ ...p, email: e.target.value }))} />
               </div>
               <div>
                 <label className="input-label">Assign Role *</label>
@@ -676,9 +740,10 @@ export default function SettingsPage() {
                   {orgRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                 </select>
               </div>
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-3 pt-1">
                 <button className="btn-secondary flex-1" onClick={() => setShowInvite(false)}>Cancel</button>
-                <button className="btn-primary flex-1 justify-center" onClick={inviteMember} disabled={inviteSaving}>
+                <button className="btn-primary flex-1 justify-center"
+                  onClick={inviteMember} disabled={inviteSaving}>
                   <Mail size={14} />{inviteSaving ? 'Sending…' : 'Send Invite'}
                 </button>
               </div>
