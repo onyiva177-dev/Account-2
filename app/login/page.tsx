@@ -5,36 +5,27 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 import { BarChart3, Shield, Zap, Globe, ArrowRight, Eye, EyeOff } from 'lucide-react'
+import type { Sector } from '@/types'
 
 type Mode = 'signin' | 'signup' | 'reset'
 
 // Sector → default modules mapping (Improvement 6)
-const SECTOR_MODULES: Record<string, string[]> = {
-  school:         ['accounting','transactions','contacts','payroll','budgeting','reports'],
-  hospital:       ['accounting','transactions','contacts','payroll','inventory','budgeting','reports'],
-  retail:         ['accounting','transactions','contacts','inventory','pos','banking','analytics'],
-  manufacturing:  ['accounting','transactions','contacts','inventory','payroll','banking','budgeting','analytics'],
-  ngo:            ['accounting','transactions','contacts','payroll','budgeting','reports'],
-  government:     ['accounting','transactions','contacts','payroll','tax','budgeting','reports'],
-  hospitality:    ['accounting','transactions','contacts','inventory','pos','banking','payroll'],
-  transport:      ['accounting','transactions','contacts','banking','payroll','analytics'],
-  agriculture:    ['accounting','transactions','contacts','inventory','banking','budgeting'],
-  business:       ['accounting','transactions','contacts','banking','analytics'],
-  other:          ['accounting','transactions','contacts'],
+const SECTOR_MODULES: Record<Sector, string[]> = {
+  education:  ['accounting','transactions','contacts','payroll','budgeting','reports'],
+  healthcare: ['accounting','transactions','contacts','payroll','inventory','budgeting','reports'],
+  retail:     ['accounting','transactions','contacts','inventory','pos','banking','analytics'],
+  ngo:        ['accounting','transactions','contacts','payroll','budgeting','reports'],
+  government: ['accounting','transactions','contacts','payroll','tax','budgeting','reports'],
+  business:   ['accounting','transactions','contacts','banking','analytics'],
 }
 
-const SECTORS = [
-  { value: 'business',      label: 'Business / General',    icon: '🏢' },
-  { value: 'school',        label: 'School / Education',    icon: '🎓' },
-  { value: 'hospital',      label: 'Hospital / Clinic',     icon: '🏥' },
-  { value: 'retail',        label: 'Retail / Shop',         icon: '🛒' },
-  { value: 'manufacturing', label: 'Manufacturing',         icon: '🏭' },
-  { value: 'ngo',           label: 'NGO / Non-profit',      icon: '🤝' },
-  { value: 'government',    label: 'Government / County',   icon: '🏛️' },
-  { value: 'hospitality',   label: 'Hotel / Restaurant',    icon: '🍽️' },
-  { value: 'transport',     label: 'Transport / Logistics', icon: '🚛' },
-  { value: 'agriculture',   label: 'Agriculture / Farm',    icon: '🌾' },
-  { value: 'other',         label: 'Other',                 icon: '📋' },
+const SECTORS: { value: Sector; label: string; icon: string }[] = [
+  { value: 'business',   label: 'Business / General',  icon: '🏢' },
+  { value: 'retail',     label: 'Retail / Shop',       icon: '🛒' },
+  { value: 'education',  label: 'School / Education',  icon: '🎓' },
+  { value: 'healthcare', label: 'Hospital / Clinic',   icon: '🏥' },
+  { value: 'ngo',        label: 'NGO / Non-profit',    icon: '🤝' },
+  { value: 'government', label: 'Government / County', icon: '🏛️' },
 ]
 
 const FEATURES = [
@@ -50,11 +41,11 @@ export default function LoginPage() {
   const [mode, setMode]       = useState<Mode>('signin')
   const [loading, setLoading] = useState(false)
   const [showPw, setShowPw]   = useState(false)
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{ email:string; password:string; full_name:string; org_name:string; sector:Sector }>({
     email: '', password: '', full_name: '', org_name: '', sector: 'business',
   })
 
-  const upd = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }))
+  const upd = (k: string, v: string) => setForm(p => ({ ...p, [k]: v as any }))
 
   // ── Sign In ─────────────────────────────────────────────────────
   const handleSignIn = async () => {
