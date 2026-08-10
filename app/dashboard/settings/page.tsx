@@ -8,6 +8,7 @@ import {
   CheckCircle2, X, Plus, Smartphone, Mail, Lock, RefreshCw
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import type { Sector } from '@/types'
 
 const ALL_MODULES = [
   { key: 'accounting',   label: 'Accounting',       desc: 'Journal entries, COA, Trial Balance' },
@@ -44,7 +45,7 @@ export default function SettingsPage() {
   const [allTiers, setAllTiers]     = useState<any[]>([])
 
   // Org form
-  const [orgForm, setOrgForm] = useState({
+  const [orgForm, setOrgForm] = useState<{ name:string; sector:Sector; country:string; tax_id:string }>({
     name: '', sector: 'business', country: 'KE', tax_id: '',
   })
 
@@ -73,7 +74,7 @@ export default function SettingsPage() {
     if (organization) {
       setOrgForm({
         name:    organization.name || '',
-        sector:  (organization as any).sector || 'business',
+        sector:  ((organization as any).sector || 'business') as Sector,
         country: organization.country || 'KE',
         tax_id:  (organization as any).tax_id || '',
       })
@@ -349,9 +350,17 @@ export default function SettingsPage() {
             <div>
               <label className="input-label">Sector</label>
               <select className="input" value={orgForm.sector}
-                onChange={e => setOrgForm(p => ({ ...p, sector: e.target.value }))}>
-                {['business','school','hospital','ngo','government','retail','manufacturing','agriculture','transport','hospitality','other']
-                  .map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+                onChange={e => setOrgForm(p => ({ ...p, sector: e.target.value as Sector }))}>
+                {([
+                  ['business',   'Business / General'],
+                  ['retail',     'Retail / Shop'],
+                  ['education',  'School / Education'],
+                  ['healthcare', 'Hospital / Healthcare'],
+                  ['ngo',        'NGO / Non-profit'],
+                  ['government', 'Government / County'],
+                ] as [Sector, string][]).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
               </select>
             </div>
             <div>
