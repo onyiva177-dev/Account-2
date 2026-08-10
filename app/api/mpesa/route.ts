@@ -1,32 +1,38 @@
-// app/api/mpesa/route.ts
-// M-Pesa Daraja STK Push integration
-// Add these to Vercel env vars:
-//   MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET,
-//   MPESA_PASSKEY, MPESA_SHORTCODE, MPESA_CALLBACK_URL
+// app/api/mpesa/route.ts  — FIXED VERSION
+// Changes from original:
+//  1. Better error messages when env vars missing
+//  2. MPESA_BASE read from env so you can switch sandbox/prod without code change
+//  3. Handles Safaricom error responses more clearly
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-const MPESA_BASE = 'https://api.safaricom.co.ke'  // prod
-// const MPESA_BASE = 'https://sandbox.safaricom.co.ke'  // sandbox for testing
-
-async function getMpesaToken(): Promise<string> {
-  const key    = process.env.MPESA_CONSUMER_KEY!
-  const secret = process.env.MPESA_CONSUMER_SECRET!
-  const auth   = Buffer.from(`${key}:${secret}`).toString('base64')
-
-  const res = await fetch(
-    `${MPESA_BASE}/oauth/v1/generate?grant_type=client_credentials`,
-    { headers: { Authorization: `Basic ${auth}` } }
-  )
-  const data = await res.json()
-  return data.access_token
-}
-
-// POST /api/mpesa — initiates STK push
 export async function POST(req: NextRequest) {
   try {
+    // Check env vars first — give clear error if missing
+    const CONSUMER_KEY    = process.env.MPESA_CONSUMER_KEY
+    const CONSUMER_SECRET = process.env.MPESA_CONSUMER_SECRET
+    const SHORTCODE       = process.env.MPESA_SHORTCODE
+    const PASSKEY         = process.env.MPESA_PASSKEY
+    const CALLBACK_URL    = process.env.MPESA_CALLBACK_URL
+    const MPESA_BASE      = process.env.MPESA_BASE_URL || 'https://sandbox.safaricom.co.ke'
+
+    const missing = [
+      !CONSUMER_KEY    && 'MPESA_CONSUMER_KEY',
+      !CONSUMER_SECRET && 'MPESA_CONSUMER_SECRET',
+      !SHORTCODE       && 'MPESA_SHORTCODE',
+      !PASSKEY         && 'MPESA_PASSKEY',
+      !CALLBACK_URL    && 'MPESA_CALLBACK_URL',
+    ].filter(Boolean)
+
+    if (missing.length > 0) {
+      return NextResponse.json(
+        { error: `Missing Vercel env vars: ${missing.join(', ')}. Add them in Vercel → Settings → Environment Variables then redeploy.` },
+        { status: 400 }
+      )
+    }
+
     const body = await req.json()
     const { phone, tier_id, tier_name, amount } = body
 
@@ -46,37 +52,55 @@ export async function POST(req: NextRequest) {
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { data: profile } = await supabase
-      .from('profiles').select('organization_id').eq('id', session.user.id).single()
-    if (!profile?.organization_id) return NextResponse.json({ error: 'No org' }, { status: 400 })
+      .from('profiles').select('organization_id')
+      .eq('id', session.user.id).single()
+    if (!profile?.organization_id) {
+      return NextResponse.json({ error: 'No organisation found for this user' }, { status: 400 })
+    }
 
-    // Clean phone number → 2547XXXXXXXX format
-    const cleanPhone = phone.replace(/\D/g, '').replace(/^0/, '254').replace(/^\+/, '')
+    // Clean phone → 2547XXXXXXXX
+    const cleanPhone = phone.replace(/\D/g, '')
+      .replace(/^0/, '254')
+      .replace(/^\+/, '')
+    if (cleanPhone.length < 12) {
+      return NextResponse.json({ error: 'Invalid phone number format. Use 07XXXXXXXX or 254XXXXXXXXX' }, { status: 400 })
+    }
 
-    // Get M-Pesa token
-    const token     = await getMpesaToken()
-    const shortcode = process.env.MPESA_SHORTCODE!
-    const passkey   = process.env.MPESA_PASSKEY!
+    // Get M-Pesa OAuth token
+    const auth    = Buffer.from(`${CONSUMER_KEY}:${CONSUMER_SECRET}`).toString('base64')
+    const tokenRes = await fetch(`${MPESA_BASE}/oauth/v1/generate?grant_type=client_credentials`, {
+      headers: { Authorization: `Basic ${auth}` },
+    })
+    const tokenData = await tokenRes.json()
+
+    if (!tokenData.access_token) {
+      return NextResponse.json(
+        { error: 'Failed to get M-Pesa token. Check MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET.' },
+        { status: 400 }
+      )
+    }
+
+    // Build STK push password
     const timestamp = new Date().toISOString().replace(/[-T:.Z]/g, '').slice(0, 14)
-    const password  = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64')
-    const callbackUrl = process.env.MPESA_CALLBACK_URL!
+    const password  = Buffer.from(`${SHORTCODE}${PASSKEY}${timestamp}`).toString('base64')
 
-    // STK Push request
+    // Send STK push
     const stkRes = await fetch(`${MPESA_BASE}/mpesa/stkpush/v1/processrequest`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${tokenData.access_token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        BusinessShortCode: shortcode,
+        BusinessShortCode: SHORTCODE,
         Password:          password,
         Timestamp:         timestamp,
         TransactionType:   'CustomerPayBillOnline',
         Amount:            Math.ceil(amount),
         PartyA:            cleanPhone,
-        PartyB:            shortcode,
+        PartyB:            SHORTCODE,
         PhoneNumber:       cleanPhone,
-        CallBackURL:       callbackUrl,
+        CallBackURL:       CALLBACK_URL,
         AccountReference:  `FinAI-${profile.organization_id.slice(0, 8).toUpperCase()}`,
         TransactionDesc:   `FinAI ${tier_name} subscription`,
       }),
@@ -86,12 +110,12 @@ export async function POST(req: NextRequest) {
 
     if (stkData.ResponseCode !== '0') {
       return NextResponse.json(
-        { error: stkData.ResponseDescription || 'STK push failed' },
+        { error: stkData.ResponseDescription || stkData.errorMessage || 'STK push failed' },
         { status: 400 }
       )
     }
 
-    // Record pending payment in DB
+    // Record pending payment
     await supabase.from('payment_transactions').insert({
       organization_id:   profile.organization_id,
       tier_id,
