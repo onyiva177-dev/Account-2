@@ -99,7 +99,11 @@ export default function SettingsPage() {
     // KEY FIX: enabled_modules in org settings must ONLY contain
     // modules that are ALSO in the tier. Anything extra gets stripped.
     const rawEnabled: string[] = (organization?.settings as any)?.enabled_modules || []
-    const validEnabled = rawEnabled.filter(m => tierMods.includes(m))
+    // accounting is always enabled — enforce it regardless of tier
+    const validEnabled = [
+      ...rawEnabled.filter(m => tierMods.includes(m) || m === 'accounting'),
+      ...(!rawEnabled.includes('accounting') ? ['accounting'] : []),
+    ].filter((v, i, a) => a.indexOf(v) === i)  // deduplicate
 
     // If there is a mismatch (org has modules not in tier), fix it in DB
     if (validEnabled.length !== rawEnabled.length) {
@@ -157,6 +161,11 @@ export default function SettingsPage() {
 
   // ── Module toggle — strictly gated by tier ─────────────────────
   const toggleModule = async (key: string, currentlyEnabled: boolean) => {
+    // Accounting can never be disabled — it is always free
+    if (key === 'accounting') {
+      toast.error('Accounting is always enabled — it is the core free module')
+      return
+    }
     // Hard gate: module must be in tier
     if (!tierModules.includes(key)) {
       const modLabel = ALL_MODULES.find(m => m.key === key)?.label
@@ -414,7 +423,8 @@ export default function SettingsPage() {
               style={{ color: 'var(--text-muted)' }}>Module Access</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {ALL_MODULES.map(mod => {
-                const inTier    = tierModules.includes(mod.key)
+                // accounting is always free — never locked behind a tier
+                const inTier    = mod.key === 'accounting' || tierModules.includes(mod.key)
                 const isEnabled = enabledModules.includes(mod.key)
                 return (
                   <div key={mod.key}
