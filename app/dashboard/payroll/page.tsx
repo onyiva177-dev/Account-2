@@ -266,15 +266,15 @@ export default function PayrollPage() {
           <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom:'1px solid var(--border)' }}>
             <div>
               <h3 className="font-semibold text-sm" style={{ color:'var(--text-primary)' }}>
-                Latest Payroll — {currentRun?.status === 'processed' ? 'Processed ✓' : 'Draft'}
+                Latest Payroll — {currentRun?.status === 'approved' ? 'Approved ✓' : 'Draft'}
               </h3>
-              {currentRun?.status === 'processed' && (
+              {currentRun?.status === 'approved' && (
                 <p className="text-xs mt-0.5" style={{ color:'var(--success)' }}>
                   Journal entry auto-created · Tax obligations recorded
                 </p>
               )}
             </div>
-            {currentRun?.status === 'draft' && (
+            {['draft','pending'].includes(currentRun?.status) && (
               <div className="flex items-center gap-2 text-xs p-2 rounded-xl"
                 style={{ background:'var(--warning-dim)', border:'1px solid var(--warning)40' }}>
                 <AlertTriangle size={13} style={{ color:'var(--warning)' }}/>
@@ -320,7 +320,7 @@ export default function PayrollPage() {
               </tfoot>
             </table>
           </div>
-          {currentRun?.status === 'draft' && (
+          {['draft','pending'].includes(currentRun?.status) && (
             <div className="flex flex-col sm:flex-row justify-end gap-2 p-4" style={{ borderTop:'1px solid var(--border)' }}>
               <button className="btn-secondary text-sm flex items-center gap-2 justify-center"
                 onClick={() => exportPayslips(payrollLines, currentRun?.period, organization?.name||'', currency)}>
