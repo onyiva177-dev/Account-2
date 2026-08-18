@@ -3,12 +3,9 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import { formatCurrency } from '@/lib/utils'
-import {
-  Plus, Play, Users, DollarSign, Calculator,
-  CheckCircle2, UserX, X, BookOpen, AlertTriangle
-} from 'lucide-react'
-import toast from 'react-hot-toast'
 import { exportPayslips } from '@/lib/exportPayslips'
+import { Plus, Play, Users, DollarSign, Calculator, CheckCircle2, UserX, X, BookOpen, AlertTriangle } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 export default function PayrollPage() {
   const supabase = createClient()
@@ -34,7 +31,8 @@ export default function PayrollPage() {
   const load = async () => {
     setLoading(true)
     const { data: emps } = await supabase.from('employees')
-      .select('*, contact:contacts(name,email)').eq('organization_id', organization!.id).eq('is_active', true)
+      .select('*, contact:contacts(name,email)')
+      .eq('organization_id', organization!.id).eq('is_active', true)
     setEmployees(emps || [])
     const { data: run } = await supabase.from('payroll_runs')
       .select('*, payroll_lines(*, employee:employees(*, contact:contacts(name)))')
@@ -49,29 +47,30 @@ export default function PayrollPage() {
       return toast.error('Name, employee number and salary required')
     setSavingEmp(true)
     const { data: contact, error: ce } = await supabase.from('contacts').insert({
-      organization_id: organization!.id, type:'employee',
-      contact_type:'employee', name:empForm.full_name,
-      email:empForm.email, phone:empForm.phone
+      organization_id: organization!.id, type: 'employee',
+      name: empForm.full_name, email: empForm.email || null, phone: empForm.phone || null,
+      balance: 0, currency, is_active: true,
     }).select().single()
-    if (ce) { toast.error('Failed: '+ce.message); setSavingEmp(false); return }
-    await supabase.from('employees').insert({
+    if (ce) { toast.error('Contact failed: ' + ce.message); setSavingEmp(false); return }
+    const { error: ee } = await supabase.from('employees').insert({
       organization_id: organization!.id, contact_id: contact.id,
       employee_number: empForm.employee_number, department: empForm.department,
       job_title: empForm.job_title, employment_type: empForm.employment_type,
-      gross_salary: Number(empForm.gross_salary), tax_pin: empForm.tax_pin,
-      nhif_number: empForm.nhif_number, nssf_number: empForm.nssf_number,
+      gross_salary: Number(empForm.gross_salary), tax_pin: empForm.tax_pin || null,
+      nhif_number: empForm.nhif_number || null, nssf_number: empForm.nssf_number || null,
       hire_date: empForm.hire_date, is_active: true,
     })
+    if (ee) { toast.error('Employee failed: ' + ee.message); setSavingEmp(false); return }
     toast.success(`${empForm.full_name} added`)
     setShowAdd(false); setSavingEmp(false); load()
   }
 
   const computePAYE = (g: number) => {
     let t = 0
-    if (g <= 24000) t = g * 0.10
-    else if (g <= 32333) t = 2400 + (g-24000) * 0.25
-    else if (g <= 500000) t = 4483.25 + (g-32333) * 0.30
-    else t = 4483.25 + 140300 + (g-500000) * 0.325
+    if (g <= 24000)       t = g * 0.10
+    else if (g <= 32333)  t = 2400 + (g-24000)*0.25
+    else if (g <= 500000) t = 4483.25 + (g-32333)*0.30
+    else                  t = 4483.25 + 140300 + (g-500000)*0.325
     return Math.max(0, Math.round(t - 2400))
   }
   const computeNHIF = (g: number) => {
@@ -80,7 +79,7 @@ export default function PayrollPage() {
     if (g<30000) return 850; if (g<35000) return 900; if (g<40000) return 950
     if (g<45000) return 1000; if (g<50000) return 1100; if (g<60000) return 1200
     if (g<70000) return 1300; if (g<80000) return 1400; if (g<90000) return 1500
-    if (g<100000) return 1600; return 1700
+    return 1700
   }
   const computeNSSF = (g: number) => Math.round(Math.min(g,6000)*0.06 + Math.min(Math.max(g-6000,0),12000)*0.06)
 
@@ -92,23 +91,20 @@ export default function PayrollPage() {
     const lines = employees.map(e => {
       const g = e.gross_salary
       const paye = computePAYE(g); const nhif = computeNHIF(g); const nssf = computeNSSF(g)
-      return { employee_id:e.id, gross_pay:g, basic_pay:g, paye, nhif, nssf, net_pay:g-paye-nhif-nssf }
+      return { employee_id: e.id, gross_pay: g, basic_pay: g, paye, nhif, nssf, net_pay: g-paye-nhif-nssf }
     })
     const totals = lines.reduce((a,l) => ({
-      gross: a.gross+l.gross_pay, paye: a.paye+l.paye,
-      nhif: a.nhif+l.nhif, nssf: a.nssf+l.nssf, net: a.net+l.net_pay
+      gross:a.gross+l.gross_pay, paye:a.paye+l.paye, nhif:a.nhif+l.nhif, nssf:a.nssf+l.nssf, net:a.net+l.net_pay
     }), { gross:0, paye:0, nhif:0, nssf:0, net:0 })
-
     const { data: run, error } = await supabase.from('payroll_runs').insert({
       organization_id: organization!.id, period,
       start_date: new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0],
-      end_date: new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0],
+      end_date:   new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0],
       status: 'draft',
       total_gross: totals.gross, total_paye: totals.paye,
-      total_nhif: totals.nhif, total_nssf: totals.nssf, total_net: totals.net
+      total_nhif: totals.nhif, total_nssf: totals.nssf, total_net: totals.net,
     }).select().single()
-
-    if (error) { toast.error('Failed: '+error.message); setRunning(false); return }
+    if (error) { toast.error('Failed: ' + error.message); setRunning(false); return }
     await supabase.from('payroll_lines').insert(lines.map(l => ({ ...l, payroll_run_id: run.id })))
     toast.success(`Payroll run created for ${period}`)
     setRunning(false); load()
@@ -118,64 +114,51 @@ export default function PayrollPage() {
     if (!currentRun) return
     setProcessing(true)
 
-    // 1. Auto-create journal entry via RPC
+    // 1. Auto journal entry
     const { data: entryId, error: jeError } = await supabase.rpc('fn_payroll_journal', {
-      p_run_id: currentRun.id,
-      p_org_id: organization!.id,
+      p_run_id: currentRun.id, p_org_id: organization!.id,
     })
+    if (jeError) { toast.error('Journal entry failed: ' + jeError.message); setProcessing(false); return }
 
-    if (jeError) {
-      toast.error('Journal entry failed: ' + jeError.message)
-      setProcessing(false); return
-    }
-
-    // 2. Create tax transactions for PAYE, NHIF, NSSF
-    const totals = payrollLines.reduce((a,l) => ({
-      paye: a.paye+l.paye, nhif: a.nhif+l.nhif, nssf: a.nssf+l.nssf
-    }), { paye:0, nhif:0, nssf:0 })
-
-    // Get tax policy IDs
+    // 2. Tax records
     const { data: policies } = await supabase.from('tax_policies')
       .select('id, type').eq('organization_id', organization!.id).eq('is_active', true)
-
+    const totals = payrollLines.reduce((a,l) => ({ paye:a.paye+l.paye, nhif:a.nhif+l.nhif, nssf:a.nssf+l.nssf }), { paye:0, nhif:0, nssf:0 })
     if (policies && policies.length > 0) {
-      const taxInserts = [
+      const taxRows = [
         { type:'paye', amount:totals.paye },
         { type:'nhif', amount:totals.nhif },
         { type:'nssf', amount:totals.nssf },
-      ].filter(t => t.amount > 0).map(t => {
-        const policy = policies.find(p => p.type === t.type)
-        return {
-          organization_id:  organization!.id,
-          tax_policy_id:    policy?.id,
-          taxable_amount:   currentRun.total_gross,
-          tax_amount:       t.amount,
-          status:           'pending',
-          period_start:     currentRun.start_date,
-          period_end:       currentRun.end_date,
-        }
-      })
-      if (taxInserts.length > 0) await supabase.from('tax_transactions').insert(taxInserts)
+      ].filter(t => t.amount > 0).map(t => ({
+        organization_id: organization!.id,
+        tax_policy_id:   policies.find(p => p.type === t.type)?.id,
+        taxable_amount:  currentRun.total_gross,
+        tax_amount:      t.amount,
+        status:          'pending',
+        period_start:    currentRun.start_date,
+        period_end:      currentRun.end_date,
+      }))
+      if (taxRows.length > 0) await supabase.from('tax_transactions').insert(taxRows)
     }
 
-    // 3. Create a transaction record for audit trail
-    await supabase.from('transactions').insert({
+    // 3. ── Create TRANSACTION record (appears in Transactions page) ──
+    const { error: txErr } = await supabase.from('transactions').insert({
       organization_id: organization!.id,
-      type:            'expense',
+      type:            'expense',           // valid TransactionType
       number:          `PAY-${currentRun.period}`,
       date:            new Date().toISOString().split('T')[0],
-      description:     `Payroll — ${currentRun.period}`,
+      description:     `Payroll — ${currentRun.period} (${employees.length} employees)`,
       subtotal:        currentRun.total_gross,
       tax_amount:      currentRun.total_paye,
       total:           currentRun.total_gross,
       amount_paid:     currentRun.total_net,
       balance_due:     0,
+      currency:        currency,
       status:          'paid',
-      payroll_run_id:  currentRun.id,
-      journal_entry_id: entryId,
     })
+    if (txErr) toast.error('Transaction record failed: ' + txErr.message)
 
-    toast.success(`Payroll approved! Journal entry created (JE auto-generated)`)
+    toast.success('Payroll approved! Journal entry + tax records + transaction created.')
     setProcessing(false); load()
   }
 
@@ -183,7 +166,9 @@ export default function PayrollPage() {
     gross:a.gross+l.gross_pay, paye:a.paye+l.paye,
     nhif:a.nhif+l.nhif, nssf:a.nssf+l.nssf, net:a.net+l.net_pay
   }), { gross:0, paye:0, nhif:0, nssf:0, net:0 })
+
   const upd = (k:string,v:string) => setEmpForm(p=>({...p,[k]:v}))
+  const isApproved = ['approved','processed','paid'].includes(currentRun?.status)
 
   return (
     <div className="space-y-4 animate-fade-up">
@@ -191,15 +176,13 @@ export default function PayrollPage() {
         <div>
           <h1 className="text-lg sm:text-xl font-bold" style={{ color:'var(--text-primary)' }}>Payroll</h1>
           <p className="text-xs sm:text-sm mt-0.5" style={{ color:'var(--text-secondary)' }}>
-            Kenya PAYE, NHIF & NSSF — approving creates journal entries automatically
+            Kenya PAYE, NHIF & NSSF — approval creates journal entry + transaction automatically
           </p>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          <button onClick={() => setShowAdd(true)} className="btn-secondary text-sm">
-            <Plus size={13}/>Add Employee
-          </button>
+          <button onClick={()=>setShowAdd(true)} className="btn-secondary text-sm"><Plus size={13}/>Add Employee</button>
           <button onClick={runPayroll} disabled={running||employees.length===0} className="btn-primary text-sm">
-            <Play size={13}/>{running ? 'Running…' : 'Run Payroll'}
+            <Play size={13}/>{running?'Running…':'Run Payroll'}
           </button>
         </div>
       </div>
@@ -207,19 +190,14 @@ export default function PayrollPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label:'Employees',   val:String(employees.length),          icon:Users,       bg:'var(--brand-dim)',   col:'var(--brand)' },
-          { label:'Gross',       val:formatCurrency(totals.gross,currency), icon:DollarSign, bg:'var(--bg-table-head)', col:'var(--text-secondary)' },
-          { label:'Total PAYE',  val:formatCurrency(totals.paye,currency),  icon:Calculator, bg:'var(--warning-dim)', col:'var(--warning)' },
-          { label:'Net Payroll', val:formatCurrency(totals.net,currency),   icon:CheckCircle2,bg:'var(--success-dim)', col:'var(--success)' },
+          { label:'Employees',   val:String(employees.length),             col:'var(--brand)',   bg:'var(--brand-dim)' },
+          { label:'Gross',       val:formatCurrency(totals.gross,currency), col:'var(--text-secondary)', bg:'var(--bg-table-head)' },
+          { label:'Total PAYE',  val:formatCurrency(totals.paye,currency),  col:'var(--warning)', bg:'var(--warning-dim)' },
+          { label:'Net Payroll', val:formatCurrency(totals.net,currency),   col:'var(--success)', bg:'var(--success-dim)' },
         ].map(s=>(
-          <div key={s.label} className="card p-3 flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background:s.bg }}>
-              <s.icon size={14} style={{ color:s.col }}/>
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs" style={{ color:'var(--text-secondary)' }}>{s.label}</p>
-              <p className="font-bold text-xs sm:text-sm truncate" style={{ color:'var(--text-primary)' }}>{s.val}</p>
-            </div>
+          <div key={s.label} className="card p-3">
+            <p className="text-xs" style={{ color:'var(--text-secondary)' }}>{s.label}</p>
+            <p className="font-bold text-sm truncate mt-0.5" style={{ color:s.col }}>{s.val}</p>
           </div>
         ))}
       </div>
@@ -250,37 +228,37 @@ export default function PayrollPage() {
 
       {loading ? (
         <div className="card p-8 flex justify-center">
-          <div className="flex gap-1">{[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full animate-bounce" style={{ background:'var(--brand)', animationDelay:`${i*0.15}s` }}/>)}</div>
+          <div className="flex gap-1">{[0,1,2].map(i=><div key={i} className="w-2 h-2 rounded-full animate-bounce" style={{ background:'var(--brand)',animationDelay:`${i*0.15}s` }}/>)}</div>
         </div>
-      ) : employees.length === 0 ? (
+      ) : employees.length===0 ? (
         <div className="card p-10 flex flex-col items-center text-center gap-3" style={{ color:'var(--text-muted)' }}>
           <UserX size={32} style={{ opacity:0.4 }}/>
           <div>
             <p className="font-semibold text-sm" style={{ color:'var(--text-secondary)' }}>No employees yet</p>
-            <p className="text-xs mt-1">Click "Add Employee" to get started</p>
+            <p className="text-xs mt-1">Add employees to run payroll</p>
           </div>
           <button onClick={()=>setShowAdd(true)} className="btn-primary mt-2"><Plus size={15}/>Add First Employee</button>
         </div>
-      ) : payrollLines.length > 0 && (
+      ) : payrollLines.length>0 && (
         <div className="card">
           <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom:'1px solid var(--border)' }}>
             <div>
               <h3 className="font-semibold text-sm" style={{ color:'var(--text-primary)' }}>
-                Latest Payroll — {currentRun?.status === 'approved' ? 'Approved ✓' : 'Draft'}
+                Latest Payroll Run — {currentRun?.period} &nbsp;
+                <span style={{ color: isApproved?'var(--success)':'var(--warning)' }}>
+                  {isApproved ? '✓ Approved' : 'Draft'}
+                </span>
               </h3>
-              {currentRun?.status === 'approved' && (
+              {isApproved && (
                 <p className="text-xs mt-0.5" style={{ color:'var(--success)' }}>
-                  Journal entry auto-created · Tax obligations recorded
+                  Journal entry created · Tax obligations recorded · Appears in Transactions
                 </p>
               )}
             </div>
-            {['draft','pending'].includes(currentRun?.status) && (
-              <div className="flex items-center gap-2 text-xs p-2 rounded-xl"
-                style={{ background:'var(--warning-dim)', border:'1px solid var(--warning)40' }}>
+            {!isApproved && (
+              <div className="flex items-center gap-2 text-xs p-2 rounded-xl" style={{ background:'var(--warning-dim)',border:'1px solid var(--warning)40' }}>
                 <AlertTriangle size={13} style={{ color:'var(--warning)' }}/>
-                <span style={{ color:'var(--warning)' }}>
-                  Approving will auto-create a journal entry and tax records
-                </span>
+                <span style={{ color:'var(--warning)' }}>Approving auto-creates journal entry + transaction record</span>
               </div>
             )}
           </div>
@@ -288,8 +266,7 @@ export default function PayrollPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Employee</th>
-                  <th className="text-right">Gross</th>
+                  <th>Employee</th><th className="text-right">Gross</th>
                   <th className="text-right">PAYE</th>
                   <th className="text-right hidden sm:table-cell">NHIF</th>
                   <th className="text-right hidden sm:table-cell">NSSF</th>
@@ -320,10 +297,10 @@ export default function PayrollPage() {
               </tfoot>
             </table>
           </div>
-          {['draft','pending'].includes(currentRun?.status) && (
+          {!isApproved && (
             <div className="flex flex-col sm:flex-row justify-end gap-2 p-4" style={{ borderTop:'1px solid var(--border)' }}>
               <button className="btn-secondary text-sm flex items-center gap-2 justify-center"
-                onClick={() => exportPayslips(payrollLines, currentRun?.period, organization?.name||'', currency)}>
+                onClick={()=>exportPayslips(payrollLines, currentRun?.period, organization?.name||'', currency)}>
                 Export Payslips
               </button>
               <button className="btn-primary text-sm justify-center" onClick={approvePayroll} disabled={processing}>
@@ -338,11 +315,8 @@ export default function PayrollPage() {
 
       {/* Add Employee Modal */}
       {showAdd && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-          style={{ background:'rgba(0,0,0,0.5)' }}
-          onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
-          <div className="w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl max-h-[92vh] flex flex-col"
-            style={{ background:'var(--bg-card)', border:'1px solid var(--border)' }}>
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background:'rgba(0,0,0,0.5)' }} onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
+          <div className="w-full sm:max-w-2xl rounded-t-2xl sm:rounded-2xl max-h-[92vh] flex flex-col" style={{ background:'var(--bg-card)',border:'1px solid var(--border)' }}>
             <div className="flex items-center justify-between p-4" style={{ borderBottom:'1px solid var(--border)' }}>
               <h2 className="font-bold" style={{ color:'var(--text-primary)' }}>Add Employee</h2>
               <button className="btn-ghost p-2" onClick={()=>setShowAdd(false)}><X size={16}/></button>
