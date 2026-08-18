@@ -1,39 +1,76 @@
-// app/api/whatsapp/route.ts
-// Send WhatsApp messages via WhatsApp Business Cloud API (Meta)
-// FREE tier: 1000 conversations/month
-//
-// Setup:
-// 1. Go to developers.facebook.com → Create App → Business
-// 2. Add WhatsApp product
-// 3. Get Phone Number ID and Access Token
-// Add to Vercel env vars:
-//   WHATSAPP_PHONE_NUMBER_ID=your_phone_number_id
-//   WHATSAPP_ACCESS_TOKEN=your_access_token
-//   WHATSAPP_WEBHOOK_SECRET=your_webhook_verify_token
-
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-const WA_API = 'https://graph.facebook.com/v19.0'
+const adminSupabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
+// GET — Meta webhook verification
+export async function GET(req: NextRequest) {
+  const p = req.nextUrl.searchParams
+  if (p.get('hub.mode') === 'subscribe' && p.get('hub.verify_token') === process.env.WHATSAPP_WEBHOOK_SECRET)
+    return new NextResponse(p.get('hub.challenge'), { status: 200 })
+  return new NextResponse('Forbidden', { status: 403 })
+}
+
+// POST — send outbound OR receive incoming from Meta
 export async function POST(req: NextRequest) {
+  const body = await req.json()
+
+  // ── Incoming reply from Meta webhook ─────────────────────────────
+  if (body?.object === 'whatsapp_business_account') {
+    const messages = body.entry?.[0]?.changes?.[0]?.value?.messages || []
+    for (const msg of messages) {
+      if (msg.type !== 'text') continue
+      const fromPhone = msg.from
+      const text      = msg.text?.body
+      const waId      = msg.id
+
+      // Find contact with this phone
+      const { data: contact } = await adminSupabase
+        .from('contacts')
+        .select('id, organization_id, name')
+        .or(`whatsapp_number.eq.${fromPhone},phone.eq.${fromPhone}`)
+        .limit(1).single()
+
+      if (!contact) continue
+
+      // Find org owner to be the recipient
+      const { data: owner } = await adminSupabase
+        .from('profiles').select('id')
+        .eq('organization_id', contact.organization_id)
+        .in('role', ['super_admin', 'owner']).limit(1).single()
+
+      await adminSupabase.from('app_messages').insert({
+        organization_id:      contact.organization_id,
+        sender_id:            null,
+        recipient_id:         owner?.id || null,
+        recipient_contact_id: null,
+        channel:              'whatsapp',
+        body:                 text,
+        is_read:              false,
+        whatsapp_msg_id:      waId,
+        whatsapp_status:      'received',
+        metadata: { from_contact_id: contact.id, from_name: contact.name, from_phone: fromPhone },
+      })
+    }
+    return NextResponse.json({ ok: true })
+  }
+
+  // ── Outbound: send a WhatsApp message ────────────────────────────
   try {
-    const body = await req.json()
-    const { contact_id, message, contact_phone, contact_name } = body
+    const { contact_id, message, contact_phone } = body
+    if (!message) return NextResponse.json({ error: 'message required' }, { status: 400 })
 
-    if (!message || (!contact_id && !contact_phone)) {
-      return NextResponse.json({ error: 'message and contact required' }, { status: 400 })
-    }
-
-    const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID
-    const ACCESS_TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN
-
-    if (!PHONE_NUMBER_ID || !ACCESS_TOKEN) {
+    const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID
+    const TOKEN    = process.env.WHATSAPP_ACCESS_TOKEN
+    if (!PHONE_ID || !TOKEN)
       return NextResponse.json({
-        error: 'WhatsApp not configured. Add WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to Vercel env vars.'
+        error: 'WhatsApp not configured — add WHATSAPP_PHONE_NUMBER_ID and WHATSAPP_ACCESS_TOKEN to Vercel'
       }, { status: 400 })
-    }
 
     const cookieStore = await cookies()
     const supabase = createServerClient(
@@ -41,84 +78,49 @@ export async function POST(req: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } }
     )
-
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { data: profile } = await supabase
-      .from('profiles').select('organization_id, full_name').eq('id', session.user.id).single()
+      .from('profiles').select('organization_id').eq('id', session.user.id).single()
 
-    // Get contact phone if contact_id provided
     let phone = contact_phone
+    let contactName = ''
     if (contact_id && !phone) {
-      const { data: contact } = await supabase
-        .from('contacts').select('whatsapp_number, phone, name').eq('id', contact_id).single()
-      phone = contact?.whatsapp_number || contact?.phone
-      if (!phone) return NextResponse.json({ error: 'Contact has no phone/WhatsApp number' }, { status: 400 })
+      const { data: c } = await supabase.from('contacts').select('*').eq('id', contact_id).single()
+      phone = c?.whatsapp_number || c?.phone
+      contactName = c?.name || ''
+      if (!phone) return NextResponse.json({ error: 'Contact has no WhatsApp number or phone' }, { status: 400 })
     }
 
-    // Clean phone number — must be international format without +
-    const cleanPhone = phone.replace(/\D/g, '').replace(/^0/, '254')
+    const cleanPhone = phone.replace(/\D/g,'').replace(/^0/,'254').replace(/^\+/,'')
 
-    // Send via WhatsApp Business API
-    const waRes = await fetch(`${WA_API}/${PHONE_NUMBER_ID}/messages`, {
+    const waRes = await fetch(`https://graph.facebook.com/v19.0/${PHONE_ID}/messages`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${ACCESS_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: cleanPhone,
-        type: 'text',
-        text: {
-          body: message,
-          preview_url: false,
-        },
+        messaging_product: 'whatsapp', to: cleanPhone, type: 'text',
+        text: { body: message, preview_url: false },
       }),
     })
-
     const waData = await waRes.json()
+    if (!waRes.ok || waData.error)
+      return NextResponse.json({ error: waData.error?.message || 'WhatsApp API error' }, { status: 400 })
 
-    if (!waRes.ok || waData.error) {
-      return NextResponse.json(
-        { error: waData.error?.message || 'WhatsApp API error' },
-        { status: 400 }
-      )
-    }
-
-    // Log in app_messages
     await supabase.from('app_messages').insert({
-      organization_id:     profile!.organization_id,
-      sender_id:           session.user.id,
+      organization_id:      profile!.organization_id,
+      sender_id:            session.user.id,
       recipient_contact_id: contact_id || null,
-      channel:             'whatsapp',
-      body:                message,
-      whatsapp_msg_id:     waData.messages?.[0]?.id,
-      whatsapp_status:     'sent',
+      channel:              'whatsapp',
+      body:                 message,
+      is_read:              true,
+      whatsapp_msg_id:      waData.messages?.[0]?.id,
+      whatsapp_status:      'sent',
+      metadata:             { to_phone: cleanPhone, to_name: contactName },
     })
 
-    return NextResponse.json({
-      ok: true,
-      message_id: waData.messages?.[0]?.id,
-      phone: cleanPhone,
-    })
-
+    return NextResponse.json({ ok: true, message_id: waData.messages?.[0]?.id })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
-}
-
-// WhatsApp webhook — Meta sends delivery/read receipts here
-// Also receives replies from customers
-export async function GET(req: NextRequest) {
-  const params   = req.nextUrl.searchParams
-  const mode     = params.get('hub.mode')
-  const token    = params.get('hub.verify_token')
-  const challenge = params.get('hub.challenge')
-
-  if (mode === 'subscribe' && token === process.env.WHATSAPP_WEBHOOK_SECRET) {
-    return new NextResponse(challenge, { status: 200 })
-  }
-  return new NextResponse('Forbidden', { status: 403 })
 }
