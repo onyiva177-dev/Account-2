@@ -66,7 +66,17 @@ export default function SettingsPage() {
   const [polling, setPolling]           = useState(false)
 
   // Invite
-  const [showInvite, setShowInvite]   = useState(false)
+  const [invites, setInvites]           = useState<any[]>([])
+  const [templates, setTemplates]       = useState<any[]>([])
+  const [inviteStep, setInviteStep]     = useState<'form'|'letter'|'done'>('form')
+  const [inviteLink, setInviteLink]     = useState('')
+  const [inviteForm, setInviteForm]     = useState({ email:'', name:'', role_id:'', modules:[] as string[], use_letter:false })
+  const [letterForm, setLetterForm]     = useState({ subject:'', body:'', agreement:'' })
+  const [inviteSaving, setInviteSaving] = useState(false)
+  const [showTemplate, setShowTemplate] = useState(false)
+  const [templateForm, setTemplateForm] = useState({ name:'', subject:'', body:'', type:'offer_letter' })
+  const [templateSaving, setTemplateSaving] = useState(false)
+  const [showInvite, setShowInvite]     = useState(false)
   const [inviteForm, setInviteForm]   = useState({ email: '', role_id: '' })
   const [inviteSaving, setInviteSaving] = useState(false)
 
@@ -483,61 +493,151 @@ export default function SettingsPage() {
 
       {/* ── TEAM & ROLES TAB ── */}
       {tab === 'team' && (
-        <div className="space-y-4 max-w-2xl">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Team Members</h3>
-            <button className="btn-primary text-sm" onClick={() => setShowInvite(true)}>
-              <Plus size={14} />Invite Member
-            </button>
+        <div className="space-y-4 max-w-3xl">
+
+          {/* Active members */}
+          <div className="card">
+            <div className="px-4 py-3" style={{ borderBottom:'1px solid var(--border)' }}>
+              <h3 className="font-semibold text-sm" style={{ color:'var(--text-primary)' }}>Team Members</h3>
+            </div>
+            <div className="table-container">
+              <table className="table">
+                <thead><tr><th>Member</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
+                <tbody>
+                  {teamMembers.length === 0 ? (
+                    <tr><td colSpan={4} className="text-center py-6" style={{ color:'var(--text-muted)' }}>No team members yet</td></tr>
+                  ) : teamMembers.map(m => (
+                    <tr key={m.id}>
+                      <td className="font-medium text-sm">{m.full_name}</td>
+                      <td className="text-xs" style={{ color:'var(--text-secondary)' }}>{m.email||'—'}</td>
+                      <td><span className="badge badge-blue text-xs capitalize">{(m.org_role as any)?.name||'Owner'}</span></td>
+                      <td className="text-xs" style={{ color:'var(--text-muted)' }}>
+                        {m.created_at ? new Date(m.created_at).toLocaleDateString('en-KE') : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div className="card overflow-hidden">
-            <table className="table">
-              <thead>
-                <tr><th>Member</th><th>Email</th><th>Role</th><th>Joined</th></tr>
-              </thead>
-              <tbody>
-                {teamMembers.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-8"
-                    style={{ color: 'var(--text-muted)' }}>No team members yet</td></tr>
-                ) : teamMembers.map(m => (
-                  <tr key={m.id}>
-                    <td className="font-medium text-sm">{m.full_name}</td>
-                    <td className="text-xs" style={{ color: 'var(--text-secondary)' }}>{m.email || '—'}</td>
-                    <td>
-                      <span className="badge badge-blue text-xs capitalize">
-                        {(m.org_role as any)?.name || 'Owner'}
-                      </span>
-                    </td>
-                    <td className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {m.created_at ? new Date(m.created_at).toLocaleDateString('en-KE') : '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+
+          {/* Letter templates */}
           <div className="card p-4">
-            <h4 className="font-semibold text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
-              Roles in this organisation
-            </h4>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-semibold text-sm" style={{ color:'var(--text-primary)' }}>Letter Templates</h3>
+                <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>Offer letters, contracts and NDAs used when inviting employees</p>
+              </div>
+              <button className="btn-secondary text-sm" onClick={() => setShowTemplate(true)}><Plus size={13}/>New Template</button>
+            </div>
+            {templates.length === 0 ? (
+              <p className="text-sm text-center py-4" style={{ color:'var(--text-muted)' }}>No templates — run INVITE_SCHEMA.sql to seed a default offer letter</p>
+            ) : (
+              <div className="space-y-2">
+                {templates.map((t:any) => (
+                  <div key={t.id} className="flex items-center justify-between p-3 rounded-xl"
+                    style={{ background:'var(--bg-table-head)', border:'1px solid var(--border)' }}>
+                    <div>
+                      <p className="text-sm font-medium" style={{ color:'var(--text-primary)' }}>{t.name}</p>
+                      <p className="text-xs mt-0.5 capitalize" style={{ color:'var(--text-muted)' }}>{t.type?.replace('_',' ')}</p>
+                    </div>
+                    {t.is_default && <span className="badge badge-green text-xs">Default</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Invitations with status tracking */}
+          <div className="card">
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom:'1px solid var(--border)' }}>
+              <div>
+                <h3 className="font-semibold text-sm" style={{ color:'var(--text-primary)' }}>Invitations</h3>
+                <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>Real emails with signup link, agreement and status tracking</p>
+              </div>
+              <button className="btn-primary text-sm" onClick={() => {
+                setShowInvite(true)
+                setInviteStep('form')
+                setInviteForm({ email:'', name:'', role_id:'', modules:[], use_letter:false })
+                setLetterForm({ subject:'', body:'', agreement:'' })
+                setInviteLink('')
+              }}>
+                <Plus size={14}/>Invite Member
+              </button>
+            </div>
+            {invites.length === 0 ? (
+              <div className="p-8 text-center" style={{ color:'var(--text-muted)' }}>
+                <Mail size={28} className="mx-auto mb-2 opacity-30"/>
+                <p className="text-sm">No invitations yet</p>
+                <p className="text-xs mt-1">Invite employees — they receive a real email with a signup link</p>
+              </div>
+            ) : (
+              <div className="table-container">
+                <table className="table">
+                  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Sent</th><th style={{ width:'80px' }}>Actions</th></tr></thead>
+                  <tbody>
+                    {invites.map((inv:any) => {
+                      const sts = {
+                        pending:  { label:'Pending',   bg:'#fef3c7', col:'#92400e' },
+                        sent:     { label:'Sent',      bg:'#dbeafe', col:'#1e40af' },
+                        accepted: { label:'Accepted',  bg:'#e0f2fe', col:'#0369a1' },
+                        signed:   { label:'Signed ✓',  bg:'#d1fae5', col:'#065f46' },
+                      }[inv.status as string] || { label:inv.status, bg:'#f1f5f9', col:'#94a3b8' }
+                      return (
+                        <tr key={inv.id}>
+                          <td className="font-medium text-sm">{inv.name}</td>
+                          <td className="text-xs" style={{ color:'var(--text-secondary)' }}>{inv.email}</td>
+                          <td><span className="badge badge-blue text-xs">{inv.role_name || (inv.role as any)?.name || '—'}</span></td>
+                          <td><span className="badge text-xs" style={{ background:sts.bg, color:sts.col }}>{sts.label}</span></td>
+                          <td className="text-xs" style={{ color:'var(--text-muted)' }}>
+                            {new Date(inv.created_at).toLocaleDateString('en-KE')}
+                            {inv.signed_at && (
+                              <span className="block" style={{ color:'var(--success)' }}>
+                                Signed {new Date(inv.signed_at).toLocaleDateString('en-KE')}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <div className="flex gap-1">
+                              {inv.status !== 'signed' && (
+                                <button className="btn-ghost p-1.5" title="Resend"
+                                  onClick={() => { setInviteForm({ email:inv.email, name:inv.name, role_id:inv.role_id||'', modules:inv.modules||[], use_letter:false }); setLetterForm({ subject:'', body:'', agreement:'' }); setInviteStep('form'); setInviteLink(''); setShowInvite(true) }}>
+                                  <RefreshCw size={12}/>
+                                </button>
+                              )}
+                              <button className="btn-ghost p-1.5" style={{ color:'var(--danger)' }} title="Remove"
+                                onClick={async () => { await supabase.from('invitations').delete().eq('id',inv.id); toast.success('Removed'); loadAll() }}>
+                                <Trash2 size={12}/>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Roles */}
+          <div className="card p-4">
+            <h4 className="font-semibold text-sm mb-3" style={{ color:'var(--text-primary)' }}>Available Roles</h4>
             <div className="space-y-2">
               {orgRoles.map(role => {
-                const perms   = role.permissions as any
-                const modules = perms?.modules === 'all' ? 'All modules'
-                  : Array.isArray(perms?.modules) ? perms.modules.join(', ') : '—'
+                const perms = role.permissions as any
+                const mods  = perms?.modules==='all' ? 'All modules' : Array.isArray(perms?.modules) ? perms.modules.join(', ') : '—'
                 return (
                   <div key={role.id} className="flex items-start justify-between p-3 rounded-xl"
-                    style={{ background: 'var(--bg-table-head)', border: '1px solid var(--border)' }}>
+                    style={{ background:'var(--bg-table-head)', border:'1px solid var(--border)' }}>
                     <div>
-                      <p className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
-                        {role.name}
-                      </p>
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{modules}</p>
+                      <p className="font-semibold text-sm" style={{ color:'var(--text-primary)' }}>{role.name}</p>
+                      <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>{mods}</p>
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      {perms?.can_delete        && <span className="badge badge-red text-xs">Delete</span>}
-                      {perms?.can_manage_users  && <span className="badge badge-purple text-xs">Manage users</span>}
-                      {perms?.can_view_reports  && <span className="badge badge-green text-xs">Reports</span>}
+                      {perms?.can_delete       && <span className="badge badge-red text-xs">Delete</span>}
+                      {perms?.can_manage_users && <span className="badge badge-purple text-xs">Manage users</span>}
+                      {perms?.can_view_reports && <span className="badge badge-green text-xs">Reports</span>}
                     </div>
                   </div>
                 )
