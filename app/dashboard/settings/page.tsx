@@ -66,19 +66,17 @@ export default function SettingsPage() {
   const [polling, setPolling]           = useState(false)
 
   // Invite
-  const [invites, setInvites]           = useState<any[]>([])
-  const [templates, setTemplates]       = useState<any[]>([])
-  const [inviteStep, setInviteStep]     = useState<'form'|'letter'|'done'>('form')
-  const [inviteLink, setInviteLink]     = useState('')
-  const [inviteForm, setInviteForm]     = useState({ email:'', name:'', role_id:'', modules:[] as string[], use_letter:false })
-  const [letterForm, setLetterForm]     = useState({ subject:'', body:'', agreement:'' })
-  const [inviteSaving, setInviteSaving] = useState(false)
-  const [showTemplate, setShowTemplate] = useState(false)
-  const [templateForm, setTemplateForm] = useState({ name:'', subject:'', body:'', type:'offer_letter' })
+  const [invites, setInvites]             = useState<any[]>([])
+  const [templates, setTemplates]         = useState<any[]>([])
+  const [showInvite, setShowInvite]       = useState(false)
+  const [inviteStep, setInviteStep]       = useState<'form'|'letter'|'done'>('form')
+  const [inviteLink, setInviteLink]       = useState('')
+  const [inviteForm, setInviteForm]       = useState({ email:'', name:'', role_id:'', modules:[] as string[], use_letter:false })
+  const [letterForm, setLetterForm]       = useState({ subject:'', body:'', agreement:'' })
+  const [inviteSaving, setInviteSaving]   = useState(false)
+  const [showTemplate, setShowTemplate]   = useState(false)
+  const [templateForm, setTemplateForm]   = useState({ name:'', subject:'', body:'', type:'offer_letter' })
   const [templateSaving, setTemplateSaving] = useState(false)
-  const [showInvite, setShowInvite]     = useState(false)
-  const [inviteForm, setInviteForm]   = useState({ email: '', role_id: '' })
-  const [inviteSaving, setInviteSaving] = useState(false)
 
   useEffect(() => {
     if (organization) {
@@ -156,6 +154,12 @@ export default function SettingsPage() {
     } else {
       setNotifForm({ monthly_report: false, report_email: profile?.email || '' })
     }
+    // Load invitations
+    const invRes = await fetch('/api/invite')
+    if (invRes.ok) { const d = await invRes.json(); setInvites(Array.isArray(d) ? d : []) }
+    // Load letter templates
+    const { data: tmplData } = await supabase.from('letter_templates').select('*').eq('organization_id', orgId).order('created_at')
+    setTemplates(tmplData || [])
   }
 
   // ── Save org ───────────────────────────────────────────────────
@@ -302,6 +306,49 @@ export default function SettingsPage() {
   }
 
   // ── Invite member ──────────────────────────────────────────────
+  const sendInvite = async () => {
+    if (!inviteForm.email || !inviteForm.name || !inviteForm.role_id) { toast.error('Email, name and role required'); return }
+    setInviteSaving(true)
+    const roleName = orgRoles.find(r => r.id === inviteForm.role_id)?.name || ''
+    const res = await fetch('/api/invite', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: inviteForm.email, name: inviteForm.name, role_id: inviteForm.role_id,
+        role_name: roleName, modules: inviteForm.modules,
+        agreement_text: letterForm.agreement || null,
+        letter_subject: letterForm.subject || null,
+        letter_body: letterForm.body || null,
+      }),
+    })
+    const data = await res.json()
+    setInviteSaving(false)
+    if (!res.ok) { toast.error(data.error || 'Failed'); return }
+    if (data.warning) toast.error('Warning: ' + data.warning)
+    else toast.success('Invite sent to ' + inviteForm.email)
+    setInviteLink(data.link || '')
+    setInviteStep('done')
+    loadAll()
+  }
+
+  const saveTemplate = async () => {
+    if (!templateForm.name || !templateForm.body) { toast.error('Name and body required'); return }
+    setTemplateSaving(true)
+    await supabase.from('letter_templates').insert({ ...templateForm, organization_id: organization!.id })
+    toast.success('Template saved'); setShowTemplate(false)
+    setTemplateForm({ name:'', subject:'', body:'', type:'offer_letter' })
+    setTemplateSaving(false); loadAll()
+  }
+
+  const toggleInviteMod = (m: string) => setInviteForm(p => ({
+    ...p, modules: p.modules.includes(m) ? p.modules.filter(x => x !== m) : [...p.modules, m]
+  }))
+
+  const loadTemplate = (t: any) => {
+    const roleName = orgRoles.find(r => r.id === inviteForm.role_id)?.name || ''
+    const body = t.body.replace(/{{ORG_NAME}}/g, organization?.name||'').replace(/{{NAME}}/g, inviteForm.name).replace(/{{ROLE}}/g, roleName).replace(/{{SENDER_NAME}}/g, profile?.full_name||'')
+    setLetterForm(p => ({ ...p, subject: t.subject.replace(/{{ROLE}}/g, roleName), body }))
+  }
+
   const inviteMember = async () => {
     if (!inviteForm.email || !inviteForm.role_id) {
       toast.error('Email and role required'); return
@@ -494,7 +541,6 @@ export default function SettingsPage() {
       {/* ── TEAM & ROLES TAB ── */}
       {tab === 'team' && (
         <div className="space-y-4 max-w-3xl">
-
           {/* Active members */}
           <div className="card">
             <div className="px-4 py-3" style={{ borderBottom:'1px solid var(--border)' }}>
@@ -504,18 +550,16 @@ export default function SettingsPage() {
               <table className="table">
                 <thead><tr><th>Member</th><th>Email</th><th>Role</th><th>Joined</th></tr></thead>
                 <tbody>
-                  {teamMembers.length === 0 ? (
-                    <tr><td colSpan={4} className="text-center py-6" style={{ color:'var(--text-muted)' }}>No team members yet</td></tr>
-                  ) : teamMembers.map(m => (
-                    <tr key={m.id}>
-                      <td className="font-medium text-sm">{m.full_name}</td>
-                      <td className="text-xs" style={{ color:'var(--text-secondary)' }}>{m.email||'—'}</td>
-                      <td><span className="badge badge-blue text-xs capitalize">{(m.org_role as any)?.name||'Owner'}</span></td>
-                      <td className="text-xs" style={{ color:'var(--text-muted)' }}>
-                        {m.created_at ? new Date(m.created_at).toLocaleDateString('en-KE') : '—'}
-                      </td>
-                    </tr>
-                  ))}
+                  {teamMembers.length === 0
+                    ? <tr><td colSpan={4} className="text-center py-6" style={{ color:'var(--text-muted)' }}>No team members yet</td></tr>
+                    : teamMembers.map(m => (
+                      <tr key={m.id}>
+                        <td className="font-medium text-sm">{m.full_name}</td>
+                        <td className="text-xs" style={{ color:'var(--text-secondary)' }}>{m.email||'—'}</td>
+                        <td><span className="badge badge-blue text-xs capitalize">{(m.org_role as any)?.name||'Owner'}</span></td>
+                        <td className="text-xs" style={{ color:'var(--text-muted)' }}>{m.created_at ? new Date(m.created_at).toLocaleDateString('en-KE') : '—'}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -526,26 +570,21 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="font-semibold text-sm" style={{ color:'var(--text-primary)' }}>Letter Templates</h3>
-                <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>Offer letters, contracts and NDAs used when inviting employees</p>
+                <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>Offer letters, contracts and NDAs for employee invites</p>
               </div>
               <button className="btn-secondary text-sm" onClick={() => setShowTemplate(true)}><Plus size={13}/>New Template</button>
             </div>
-            {templates.length === 0 ? (
-              <p className="text-sm text-center py-4" style={{ color:'var(--text-muted)' }}>No templates — run INVITE_SCHEMA.sql to seed a default offer letter</p>
-            ) : (
-              <div className="space-y-2">
-                {templates.map((t:any) => (
-                  <div key={t.id} className="flex items-center justify-between p-3 rounded-xl"
-                    style={{ background:'var(--bg-table-head)', border:'1px solid var(--border)' }}>
+            {templates.length === 0
+              ? <p className="text-sm text-center py-4" style={{ color:'var(--text-muted)' }}>No templates yet — run INVITE_SCHEMA.sql in Supabase to seed a default offer letter</p>
+              : <div className="space-y-2">{templates.map((t:any) => (
+                  <div key={t.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background:'var(--bg-table-head)', border:'1px solid var(--border)' }}>
                     <div>
                       <p className="text-sm font-medium" style={{ color:'var(--text-primary)' }}>{t.name}</p>
                       <p className="text-xs mt-0.5 capitalize" style={{ color:'var(--text-muted)' }}>{t.type?.replace('_',' ')}</p>
                     </div>
                     {t.is_default && <span className="badge badge-green text-xs">Default</span>}
                   </div>
-                ))}
-              </div>
-            )}
+                ))}</div>}
           </div>
 
           {/* Invitations with status tracking */}
@@ -553,71 +592,59 @@ export default function SettingsPage() {
             <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom:'1px solid var(--border)' }}>
               <div>
                 <h3 className="font-semibold text-sm" style={{ color:'var(--text-primary)' }}>Invitations</h3>
-                <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>Real emails with signup link, agreement and status tracking</p>
+                <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>Real emails with signup link · Status: Pending → Sent → Accepted → Signed</p>
               </div>
-              <button className="btn-primary text-sm" onClick={() => {
-                setShowInvite(true)
-                setInviteStep('form')
-                setInviteForm({ email:'', name:'', role_id:'', modules:[], use_letter:false })
-                setLetterForm({ subject:'', body:'', agreement:'' })
-                setInviteLink('')
-              }}>
+              <button className="btn-primary text-sm" onClick={() => { setShowInvite(true); setInviteStep('form'); setInviteForm({ email:'', name:'', role_id:'', modules:[], use_letter:false }); setLetterForm({ subject:'', body:'', agreement:'' }); setInviteLink('') }}>
                 <Plus size={14}/>Invite Member
               </button>
             </div>
-            {invites.length === 0 ? (
-              <div className="p-8 text-center" style={{ color:'var(--text-muted)' }}>
-                <Mail size={28} className="mx-auto mb-2 opacity-30"/>
-                <p className="text-sm">No invitations yet</p>
-                <p className="text-xs mt-1">Invite employees — they receive a real email with a signup link</p>
-              </div>
-            ) : (
-              <div className="table-container">
-                <table className="table">
-                  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Sent</th><th style={{ width:'80px' }}>Actions</th></tr></thead>
-                  <tbody>
-                    {invites.map((inv:any) => {
-                      const sts = {
-                        pending:  { label:'Pending',   bg:'#fef3c7', col:'#92400e' },
-                        sent:     { label:'Sent',      bg:'#dbeafe', col:'#1e40af' },
-                        accepted: { label:'Accepted',  bg:'#e0f2fe', col:'#0369a1' },
-                        signed:   { label:'Signed ✓',  bg:'#d1fae5', col:'#065f46' },
-                      }[inv.status as string] || { label:inv.status, bg:'#f1f5f9', col:'#94a3b8' }
-                      return (
-                        <tr key={inv.id}>
-                          <td className="font-medium text-sm">{inv.name}</td>
-                          <td className="text-xs" style={{ color:'var(--text-secondary)' }}>{inv.email}</td>
-                          <td><span className="badge badge-blue text-xs">{inv.role_name || (inv.role as any)?.name || '—'}</span></td>
-                          <td><span className="badge text-xs" style={{ background:sts.bg, color:sts.col }}>{sts.label}</span></td>
-                          <td className="text-xs" style={{ color:'var(--text-muted)' }}>
-                            {new Date(inv.created_at).toLocaleDateString('en-KE')}
-                            {inv.signed_at && (
-                              <span className="block" style={{ color:'var(--success)' }}>
-                                Signed {new Date(inv.signed_at).toLocaleDateString('en-KE')}
-                              </span>
-                            )}
-                          </td>
-                          <td>
-                            <div className="flex gap-1">
-                              {inv.status !== 'signed' && (
-                                <button className="btn-ghost p-1.5" title="Resend"
-                                  onClick={() => { setInviteForm({ email:inv.email, name:inv.name, role_id:inv.role_id||'', modules:inv.modules||[], use_letter:false }); setLetterForm({ subject:'', body:'', agreement:'' }); setInviteStep('form'); setInviteLink(''); setShowInvite(true) }}>
-                                  <RefreshCw size={12}/>
+            {invites.length === 0
+              ? <div className="p-8 text-center" style={{ color:'var(--text-muted)' }}>
+                  <Mail size={28} className="mx-auto mb-2 opacity-30"/>
+                  <p className="text-sm">No invitations yet</p>
+                  <p className="text-xs mt-1">Employees receive a real email with a signup link and agreement to sign</p>
+                </div>
+              : <div className="table-container">
+                  <table className="table">
+                    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Date</th><th style={{ width:'70px' }}>Actions</th></tr></thead>
+                    <tbody>
+                      {invites.map((inv:any) => {
+                        const sts = ({
+                          pending:  { label:'Pending',  bg:'#fef3c7', col:'#92400e' },
+                          sent:     { label:'Sent',     bg:'#dbeafe', col:'#1e40af' },
+                          accepted: { label:'Accepted', bg:'#e0f2fe', col:'#0369a1' },
+                          signed:   { label:'Signed ✓', bg:'#d1fae5', col:'#065f46' },
+                        } as any)[inv.status] || { label:inv.status, bg:'#f1f5f9', col:'#94a3b8' }
+                        return (
+                          <tr key={inv.id}>
+                            <td className="font-medium text-sm">{inv.name}</td>
+                            <td className="text-xs" style={{ color:'var(--text-secondary)' }}>{inv.email}</td>
+                            <td><span className="badge badge-blue text-xs">{inv.role_name||(inv.role as any)?.name||'—'}</span></td>
+                            <td><span className="badge text-xs" style={{ background:sts.bg, color:sts.col }}>{sts.label}</span></td>
+                            <td className="text-xs" style={{ color:'var(--text-muted)' }}>
+                              {new Date(inv.created_at).toLocaleDateString('en-KE')}
+                              {inv.signed_at && <span className="block" style={{ color:'var(--success)' }}>Signed {new Date(inv.signed_at).toLocaleDateString('en-KE')}</span>}
+                            </td>
+                            <td>
+                              <div className="flex gap-1">
+                                {inv.status !== 'signed' && (
+                                  <button className="btn-ghost p-1.5" title="Resend"
+                                    onClick={() => { setInviteForm({ email:inv.email, name:inv.name, role_id:inv.role_id||'', modules:inv.modules||[], use_letter:false }); setLetterForm({ subject:'', body:'', agreement:'' }); setInviteStep('form'); setInviteLink(''); setShowInvite(true) }}>
+                                    <RefreshCw size={12}/>
+                                  </button>
+                                )}
+                                <button className="btn-ghost p-1.5" title="Remove" style={{ color:'var(--danger)' }}
+                                  onClick={async () => { await supabase.from('invitations').delete().eq('id',inv.id); toast.success('Removed'); loadAll() }}>
+                                  <Trash2 size={12}/>
                                 </button>
-                              )}
-                              <button className="btn-ghost p-1.5" style={{ color:'var(--danger)' }} title="Remove"
-                                onClick={async () => { await supabase.from('invitations').delete().eq('id',inv.id); toast.success('Removed'); loadAll() }}>
-                                <Trash2 size={12}/>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>}
           </div>
 
           {/* Roles */}
@@ -626,10 +653,9 @@ export default function SettingsPage() {
             <div className="space-y-2">
               {orgRoles.map(role => {
                 const perms = role.permissions as any
-                const mods  = perms?.modules==='all' ? 'All modules' : Array.isArray(perms?.modules) ? perms.modules.join(', ') : '—'
+                const mods = perms?.modules==='all' ? 'All modules' : Array.isArray(perms?.modules) ? perms.modules.join(', ') : '—'
                 return (
-                  <div key={role.id} className="flex items-start justify-between p-3 rounded-xl"
-                    style={{ background:'var(--bg-table-head)', border:'1px solid var(--border)' }}>
+                  <div key={role.id} className="flex items-start justify-between p-3 rounded-xl" style={{ background:'var(--bg-table-head)', border:'1px solid var(--border)' }}>
                     <div>
                       <p className="font-semibold text-sm" style={{ color:'var(--text-primary)' }}>{role.name}</p>
                       <p className="text-xs mt-0.5" style={{ color:'var(--text-muted)' }}>{mods}</p>
@@ -870,6 +896,156 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* ── INVITE MODAL ── */}
+      {showInvite && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background:'rgba(0,0,0,0.5)' }} onClick={e => e.target===e.currentTarget&&setShowInvite(false)}>
+          <div className="w-full sm:max-w-xl rounded-t-2xl sm:rounded-2xl max-h-[92vh] flex flex-col" style={{ background:'var(--bg-card)', border:'1px solid var(--border)' }}>
+            <div className="flex items-center justify-between p-4" style={{ borderBottom:'1px solid var(--border)' }}>
+              <div>
+                <h2 className="font-bold" style={{ color:'var(--text-primary)' }}>
+                  {inviteStep==='form'?'Invite Team Member':inviteStep==='letter'?'Write Official Letter':'Invite Sent!'}
+                </h2>
+                {inviteStep!=='done' && (
+                  <div className="flex items-center gap-2 mt-1">
+                    {(['form','letter','done'] as const).map((s,i) => (
+                      <div key={s} className="flex items-center gap-1">
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                          style={{ background:inviteStep===s?'var(--brand)':'var(--bg-table-head)', color:inviteStep===s?'white':'var(--text-muted)' }}>{i+1}</div>
+                        {i<2 && <div className="w-4 h-0.5" style={{ background:'var(--border)' }}/>}
+                      </div>
+                    ))}
+                    <span className="text-xs" style={{ color:'var(--text-muted)' }}>Details → Letter → Done</span>
+                  </div>
+                )}
+              </div>
+              <button className="btn-ghost p-2" onClick={()=>setShowInvite(false)}><X size={16}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {inviteStep==='form' && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="input-label">Full Name *</label>
+                      <input className="input" placeholder="Jane Mwangi" value={inviteForm.name} onChange={e=>setInviteForm(p=>({...p,name:e.target.value}))}/></div>
+                    <div><label className="input-label">Email *</label>
+                      <input type="email" className="input" placeholder="jane@example.com" value={inviteForm.email} onChange={e=>setInviteForm(p=>({...p,email:e.target.value}))}/></div>
+                  </div>
+                  <div><label className="input-label">Assign Role *</label>
+                    <select className="input" value={inviteForm.role_id} onChange={e=>setInviteForm(p=>({...p,role_id:e.target.value}))}>
+                      <option value="">Select role…</option>
+                      {orgRoles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select></div>
+                  <div>
+                    <label className="input-label">Module Access</label>
+                    <p className="text-xs mb-2" style={{ color:'var(--text-muted)' }}>Select specific modules — overrides role defaults. Leave unchecked to use role defaults.</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {ALL_MODULES.map(m => (
+                        <label key={m.key} className="flex items-center gap-2 p-2 rounded-xl cursor-pointer transition-all"
+                          style={{ background:inviteForm.modules.includes(m.key)?'var(--brand-dim)':'var(--bg-table-head)', border:`1px solid ${inviteForm.modules.includes(m.key)?'var(--brand)':'var(--border)'}` }}>
+                          <input type="checkbox" checked={inviteForm.modules.includes(m.key)} onChange={()=>toggleInviteMod(m.key)} style={{ accentColor:'var(--brand)' }}/>
+                          <span className="text-xs font-medium" style={{ color:'var(--text-primary)' }}>{m.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button className="btn-secondary flex-1" onClick={()=>setShowInvite(false)}>Cancel</button>
+                    <button className="btn-secondary flex-1" onClick={()=>setInviteStep('letter')}><FileText size={14}/>Add Letter</button>
+                    <button className="btn-primary flex-1 justify-center" onClick={sendInvite} disabled={inviteSaving}>
+                      <Send size={14}/>{inviteSaving?'Sending…':'Send Invite'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {inviteStep==='letter' && (
+                <div className="space-y-4">
+                  {templates.length > 0 && (
+                    <div><label className="input-label">Load from Template</label>
+                      <select className="input" defaultValue="" onChange={e=>{const t=templates.find((t:any)=>t.id===e.target.value);if(t)loadTemplate(t)}}>
+                        <option value="">Select template…</option>
+                        {templates.map((t:any)=><option key={t.id} value={t.id}>{t.name}</option>)}
+                      </select></div>
+                  )}
+                  <div><label className="input-label">Email Subject</label>
+                    <input className="input" placeholder="Offer of Employment" value={letterForm.subject} onChange={e=>setLetterForm(p=>({...p,subject:e.target.value}))}/></div>
+                  <div><label className="input-label">Letter Body (shown in invite email)</label>
+                    <textarea className="input" rows={5} style={{ resize:'vertical',height:'auto' }} value={letterForm.body} onChange={e=>setLetterForm(p=>({...p,body:e.target.value}))} placeholder="Dear {{NAME}}, We are pleased to offer you the position of {{ROLE}}…"/></div>
+                  <div><label className="input-label">Employment Agreement</label>
+                    <p className="text-xs mb-1" style={{ color:'var(--text-muted)' }}>Employee must read and sign before accessing FinAI. Leave blank to skip.</p>
+                    <textarea className="input" rows={7} style={{ resize:'vertical',height:'auto' }} value={letterForm.agreement} onChange={e=>setLetterForm(p=>({...p,agreement:e.target.value}))} placeholder="1. TERMS OF EMPLOYMENT&#10;&#10;6. ACCEPTANCE — By signing you agree to the above terms."/></div>
+                  <div className="flex gap-3">
+                    <button className="btn-secondary flex-1" onClick={()=>setInviteStep('form')}>← Back</button>
+                    <button className="btn-primary flex-1 justify-center" onClick={sendInvite} disabled={inviteSaving}>
+                      <Send size={14}/>{inviteSaving?'Sending…':'Send Invite + Letter'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {inviteStep==='done' && (
+                <div className="flex flex-col items-center text-center gap-4 py-6">
+                  <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background:'var(--success-dim)' }}>
+                    <CheckCircle2 size={30} style={{ color:'var(--success)' }}/>
+                  </div>
+                  <div>
+                    <p className="font-bold text-base" style={{ color:'var(--text-primary)' }}>Invite Sent!</p>
+                    <p className="text-sm mt-1" style={{ color:'var(--text-muted)' }}>
+                      {inviteForm.name} will receive an email with a signup link.
+                      {letterForm.agreement && ' They must sign the agreement before accessing FinAI.'}
+                    </p>
+                  </div>
+                  {inviteLink && (
+                    <div className="w-full">
+                      <p className="text-xs font-semibold mb-2" style={{ color:'var(--text-secondary)' }}>Share link if email bounces:</p>
+                      <div className="flex gap-2">
+                        <input className="input text-xs flex-1" value={inviteLink} readOnly style={{ fontFamily:'monospace' }}/>
+                        <button className="btn-secondary px-3" onClick={()=>{navigator.clipboard.writeText(inviteLink);toast.success('Copied')}}>
+                          <Copy size={14}/>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  <button className="btn-primary" onClick={()=>setShowInvite(false)}>Done</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TEMPLATE MODAL ── */}
+      {showTemplate && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={{ background:'rgba(0,0,0,0.5)' }} onClick={e=>e.target===e.currentTarget&&setShowTemplate(false)}>
+          <div className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl max-h-[92vh] flex flex-col" style={{ background:'var(--bg-card)', border:'1px solid var(--border)' }}>
+            <div className="flex items-center justify-between p-4" style={{ borderBottom:'1px solid var(--border)' }}>
+              <h2 className="font-bold" style={{ color:'var(--text-primary)' }}>New Letter Template</h2>
+              <button className="btn-ghost p-2" onClick={()=>setShowTemplate(false)}><X size={16}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div><label className="input-label">Template Name *</label>
+                <input className="input" placeholder="Standard Offer Letter" value={templateForm.name} onChange={e=>setTemplateForm(p=>({...p,name:e.target.value}))}/></div>
+              <div><label className="input-label">Type</label>
+                <select className="input" value={templateForm.type} onChange={e=>setTemplateForm(p=>({...p,type:e.target.value}))}>
+                  <option value="offer_letter">Offer Letter</option>
+                  <option value="contract">Employment Contract</option>
+                  <option value="nda">NDA / Confidentiality</option>
+                  <option value="policy">HR Policy</option>
+                </select></div>
+              <div><label className="input-label">Email Subject</label>
+                <input className="input" placeholder="Offer of Employment — {{ROLE}}" value={templateForm.subject} onChange={e=>setTemplateForm(p=>({...p,subject:e.target.value}))}/>
+                <p className="text-xs mt-1" style={{ color:'var(--text-muted)' }}>Variables: {'{{NAME}} {{ROLE}} {{ORG_NAME}} {{SENDER_NAME}}'}</p></div>
+              <div><label className="input-label">Letter Body *</label>
+                <textarea className="input" rows={10} style={{ resize:'vertical',height:'auto' }} placeholder="Dear {{NAME}},&#10;&#10;We are pleased to offer you the position of {{ROLE}} at {{ORG_NAME}}…" value={templateForm.body} onChange={e=>setTemplateForm(p=>({...p,body:e.target.value}))}/></div>
+            </div>
+            <div className="flex gap-3 p-4" style={{ borderTop:'1px solid var(--border)' }}>
+              <button className="btn-secondary flex-1" onClick={()=>setShowTemplate(false)}>Cancel</button>
+              <button className="btn-primary flex-1 justify-center" onClick={saveTemplate} disabled={templateSaving}>
+                <CheckCircle2 size={15}/>{templateSaving?'Saving…':'Save Template'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }
